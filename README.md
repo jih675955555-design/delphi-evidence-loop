@@ -53,7 +53,7 @@
 - **합성 음성 (현장 수집 데모)**: `resembleai/chatterbox-multilingual-tts` — 같은 gRPC 호스트, function-id 기본값 `ddacc747-1269-4fab-bfd9-8f593dead106`(`TTS_FUNCTION_ID`로 덮어씀), 한국어 음성은 하나(`Chatterbox-Multilingual.ko-KR.Male`), 24 kHz. 호출은 `loop/tts.py` 한 곳. 함수가 알리는 입력 한도는 500자지만 실제로 막히는 것은 요청 한 번에 약 20초(음성 토큰 500개)라서, 글을 문장 경계에서 110자 이하 조각으로 나눠 합성하고 짧은 무음으로 잇는다. 같은 글도 매번 다른 음성이 나오므로(비결정적) 글의 해시로 캐시한다.
 - **추론**: `nvidia/nemotron-3-ultra-550b-a55b` — NIM OpenAI 호환 API, 한국어 공식 지원. 호출은 `loop/llm.py` 한 곳. 구조화 출력(JSON schema)만 받고, 같은 입력은 캐시에서 재생한다.
 - **스킬**: `skills/evidence-loop/SKILL.md` — Agent Skills 규격. Claude Code·OpenClaw 등 호환 에이전트에 설치하면 이 루프를 도구로 쓴다.
-- **샌드박스**: `sandbox/EGRESS.md` — OpenShell/NemoClaw의 deny-by-default 정책에 넣을 허용 호스트 5개. 이 루프의 외부 통신은 그게 전부다.
+- **샌드박스**: `sandbox/EGRESS.md` — OpenShell/NemoClaw의 deny-by-default 정책에 넣을 허용 호스트 6개(선택 1개 별도 — 수집 화면의 «GitHub 원본과 대조»). 이 루프의 외부 통신은 그게 전부다.
 
 ## 콘솔 (Next.js) — `console/`
 

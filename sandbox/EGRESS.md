@@ -1,6 +1,6 @@
 # Network egress this loop needs — for a deny-by-default sandbox (NVIDIA OpenShell / NemoClaw)
 
-The agent must reach exactly six hosts (two more are optional, see below). Everything else stays closed. Enter these into the sandbox's
+The agent must reach exactly six hosts (one more is optional, see below). Everything else stays closed. Enter these into the sandbox's
 network policy; the loop has no other outbound calls (verified: `grep -rn "https://" loop/`; the gRPC host is in `loop/stt.py` and `loop/tts.py`).
 
 | Host | Purpose | Method | Auth |

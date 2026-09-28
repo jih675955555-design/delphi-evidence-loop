@@ -436,20 +436,21 @@ def save(script: dict, consent_by: str, rec: dict, *, listen_mode: str) -> dict:
     """The transcript the listener saw → one field note. HCP, specialty and date come from the script (they keep
     the distinct-HCP count meaningful); the script's intent never enters the note."""
     sid = script["script_id"]
-    notes = json.loads(store.FIELD_NOTES.read_text()) if store.FIELD_NOTES.exists() else []
-    done = collected(notes).get(sid)
-    if done:
-        raise SystemExit(f"이미 수집한 대본입니다 — {done['doc_id']}")
-    a = audio(script)
-    if not a or rec.get("audio_sha256") != a["audio_sha256"]:
-        raise SystemExit("STT가 들은 음성이 지금 이 대본의 음성과 다릅니다 — 다시 재생하며 받아 적어 주세요.")
-    if not (rec.get("text") or "").strip():
-        raise SystemExit("STT가 받아 적은 글이 비어 있습니다.")
-    prov = {"source": "script", "script_id": sid, "script_sha256": script["file_sha256"], "text_sha256": script["text_sha256"],
-            "listen_mode": listen_mode, "cer": round(stt.cer(rec["text"], script["text"]), 4),
-            "tts": {k: a["tts"].get(k) for k in ("model", "voice", "function_id", "created_at")}}
-    return stt.add_note(rec, hcp_ref=script["hcp_ref"], specialty=script["specialty"], date=script["date"],
-                        consent_by=consent_by, audio_name=f"{sid}.mp3", synthetic=True, provenance=prov)
+    with stt.NOTES_LOCK:   # the «already collected» check and the append are one step — two clicks cannot both pass
+        notes = json.loads(store.FIELD_NOTES.read_text()) if store.FIELD_NOTES.exists() else []
+        done = collected(notes).get(sid)
+        if done:
+            raise SystemExit(f"이미 수집한 대본입니다 — {done['doc_id']}")
+        a = audio(script)
+        if not a or rec.get("audio_sha256") != a["audio_sha256"]:
+            raise SystemExit("STT가 들은 음성이 지금 이 대본의 음성과 다릅니다 — 다시 재생하며 받아 적어 주세요.")
+        if not (rec.get("text") or "").strip():
+            raise SystemExit("STT가 받아 적은 글이 비어 있습니다.")
+        prov = {"source": "script", "script_id": sid, "script_sha256": script["file_sha256"], "text_sha256": script["text_sha256"],
+                "listen_mode": listen_mode, "cer": round(stt.cer(rec["text"], script["text"]), 4),
+                "tts": {k: a["tts"].get(k) for k in ("model", "voice", "function_id", "created_at")}}
+        return stt.add_note(rec, hcp_ref=script["hcp_ref"], specialty=script["specialty"], date=script["date"],
+                            consent_by=consent_by, audio_name=f"{sid}.mp3", synthetic=True, provenance=prov)
 
 
 def effect(state: dict, contract: dict, notes: list[dict]) -> dict:

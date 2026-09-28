@@ -40,13 +40,14 @@ import math
 import re
 import shutil
 import subprocess
+import threading
 import time
 import wave
 from array import array
 from pathlib import Path
 
 from . import store
-from .llm import api_key, env
+from .llm import LlmUnavailable, api_key, env
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE_DIR = ROOT / "data" / "stt_cache"
@@ -54,6 +55,9 @@ RUNS_LOG = ROOT / "data" / "stt_runs.jsonl"
 CHUNK_SECONDS = 0.2     # streaming chunk size
 SEGMENT_SECONDS = 60    # offline requests stay well under gRPC's 4 MB message limit (60 s of 16 kHz PCM ≈ 1.9 MB)
 STALL_S = 20.0          # a request still open this long after its audio ran out is cut off (normal: final ≤ 1.3 s after)
+# check-then-append on field_notes.json must not interleave: two saves in one process would both pass the
+# duplicate check and take the same doc_id. Reentrant so collect.save can hold it across its own check.
+NOTES_LOCK = threading.RLock()
 
 ENGINES = {   # "boost": the engine *can* take word boosting — it is still off unless STT_BOOST > 0 (see above)
     "parakeet": {"model": "nvidia/parakeet-1.1b-rnnt-multilingual-asr", "function_id": "71203149-d3b7-4460-8231-1be2543a1fca",
@@ -184,8 +188,8 @@ def transcribe(src: Path, contract: dict, force: bool = False, engine: str | Non
                 raise ValueError("전사 결과가 비어 있습니다 — 무음이거나 지원하지 않는 언어일 수 있습니다")
             break
         except Exception as e:  # noqa: BLE001 — UNAVAILABLE / RESOURCE_EXHAUSTED / a stall from gRPC, or an empty result
-            if attempt == tries - 1 or (isinstance(e, SttUnavailable) and not isinstance(e, SttStalled)):
-                raise
+            if attempt == tries - 1 or isinstance(e, LlmUnavailable) or (isinstance(e, SttUnavailable) and not isinstance(e, SttStalled)):
+                raise   # a missing key or a bad setting does not get better by waiting
             _log(model=cfg["model"], key=key, retry=attempt + 1, reason=f"{type(e).__name__}: {str(e)[:120]}")
             time.sleep(5 * (attempt + 1))
     rec = {"engine": cfg["engine"], "model": cfg["model"], "function_id": cfg["function_id"], "language": cfg["language"], "mode": cfg["mode"],
@@ -325,6 +329,12 @@ def add_note(rec: dict, *, hcp_ref: str, specialty: str, date: str, consent_by: 
         raise SystemExit("녹음 동의를 확인한 사람의 이름이 없습니다 — 동의 확인 없이는 면담 기록이 되지 않습니다.")
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
         raise SystemExit(f"면담 날짜 형식이 아닙니다: {date!r} (YYYY-MM-DD)")
+    with NOTES_LOCK:
+        return _append_note(rec, hcp_ref=hcp_ref, specialty=specialty, date=date, consent_by=consent_by,
+                            audio_name=audio_name, notes_path=notes_path, synthetic=synthetic, provenance=provenance)
+
+
+def _append_note(rec: dict, *, hcp_ref, specialty, date, consent_by, audio_name, notes_path, synthetic, provenance) -> dict:
     notes = json.loads(notes_path.read_text()) if notes_path.exists() else []
     for n in notes:
         if n.get("stt", {}).get("audio_sha256") == rec["audio_sha256"]:
@@ -352,6 +362,11 @@ def remove_notes(doc_ids, notes_path: Path | None = None) -> list[dict]:
     targets = set(doc_ids)
     if not targets or not notes_path.exists():
         return []
+    with NOTES_LOCK:
+        return _drop_notes(targets, notes_path)
+
+
+def _drop_notes(targets: set, notes_path: Path) -> list[dict]:
     text = notes_path.read_text()
     before = json.loads(text)
     removed, keep = [], []
