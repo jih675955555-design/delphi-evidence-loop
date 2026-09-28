@@ -10,6 +10,7 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn>=0.30",
     "python-multipart>=0.0.9",
+    "nvidia-riva-client>=2.17",
 ]
 
 [tool.uv]

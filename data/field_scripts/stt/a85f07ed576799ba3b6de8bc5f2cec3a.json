@@ -1,0 +1,268 @@
+{
+ "engine": "parakeet",
+ "model": "nvidia/parakeet-1.1b-rnnt-multilingual-asr",
+ "function_id": "71203149-d3b7-4460-8231-1be2543a1fca",
+ "language": "ko-KR",
+ "mode": "streaming",
+ "audio_sha256": "23a16686f03ba86e2a682d4faecdcbe5453454c37d74c5dee4ca0703ac0a002c",
+ "duration_s": 18.69,
+ "keyterms": [],
+ "boost": 0.0,
+ "cache_key": "a85f07ed576799ba3b6de8bc5f2cec3a",
+ "created_at": "2026-09-28T14:16:59",
+ "text": "열다섯살 청소년이 당뇨로 진단받고 메트포르민을 시작한 첫주의 설사와 구토가 심해 응급실에서 수액을 받았다. 약을 잠시 끊었다가 가장 낮은 용량으로 다시 시작해서 지금은 잘 먹고 있다. 청소년은 저녁 식사 직후에 낮은 육량으로 시작해 이 주마다 조금씩 올리면 대부분 적응한다고 했다.",
+ "words": [
+  {
+   "word": "열다섯살",
+   "start_ms": 0,
+   "end_ms": 720,
+   "confidence": 0.0
+  },
+  {
+   "word": "청소년이",
+   "start_ms": 1040,
+   "end_ms": 1520,
+   "confidence": 0.0
+  },
+  {
+   "word": "당뇨로",
+   "start_ms": 1680,
+   "end_ms": 2000,
+   "confidence": 0.0
+  },
+  {
+   "word": "진단받고",
+   "start_ms": 2080,
+   "end_ms": 2560,
+   "confidence": 0.0
+  },
+  {
+   "word": "메트포르민을",
+   "start_ms": 2560,
+   "end_ms": 3360,
+   "confidence": 0.0
+  },
+  {
+   "word": "시작한",
+   "start_ms": 3520,
+   "end_ms": 3760,
+   "confidence": 0.0
+  },
+  {
+   "word": "첫주의",
+   "start_ms": 3840,
+   "end_ms": 4240,
+   "confidence": 0.0
+  },
+  {
+   "word": "설사와",
+   "start_ms": 4240,
+   "end_ms": 4640,
+   "confidence": 0.0
+  },
+  {
+   "word": "구토가",
+   "start_ms": 4720,
+   "end_ms": 5040,
+   "confidence": 0.0
+  },
+  {
+   "word": "심해",
+   "start_ms": 5200,
+   "end_ms": 5280,
+   "confidence": 0.0
+  },
+  {
+   "word": "응급실에서",
+   "start_ms": 5520,
+   "end_ms": 5920,
+   "confidence": 0.0
+  },
+  {
+   "word": "수액을",
+   "start_ms": 6080,
+   "end_ms": 6320,
+   "confidence": 0.0
+  },
+  {
+   "word": "받았다",
+   "start_ms": 6480,
+   "end_ms": 6720,
+   "confidence": 0.0
+  },
+  {
+   "word": ".",
+   "start_ms": 6720,
+   "end_ms": 6720,
+   "confidence": 0.0
+  },
+  {
+   "word": "약을",
+   "start_ms": 7120,
+   "end_ms": 7280,
+   "confidence": 0.0
+  },
+  {
+   "word": "잠시",
+   "start_ms": 7440,
+   "end_ms": 7600,
+   "confidence": 0.0
+  },
+  {
+   "word": "끊었다가",
+   "start_ms": 7680,
+   "end_ms": 8240,
+   "confidence": 0.0
+  },
+  {
+   "word": "가장",
+   "start_ms": 8320,
+   "end_ms": 8320,
+   "confidence": 0.0
+  },
+  {
+   "word": "낮은",
+   "start_ms": 8560,
+   "end_ms": 8880,
+   "confidence": 0.0
+  },
+  {
+   "word": "용량으로",
+   "start_ms": 8960,
+   "end_ms": 9360,
+   "confidence": 0.0
+  },
+  {
+   "word": "다시",
+   "start_ms": 9440,
+   "end_ms": 9440,
+   "confidence": 0.0
+  },
+  {
+   "word": "시작해서",
+   "start_ms": 9600,
+   "end_ms": 10000,
+   "confidence": 0.0
+  },
+  {
+   "word": "지금은",
+   "start_ms": 10320,
+   "end_ms": 10480,
+   "confidence": 0.0
+  },
+  {
+   "word": "잘",
+   "start_ms": 10640,
+   "end_ms": 10640,
+   "confidence": 0.0
+  },
+  {
+   "word": "먹고",
+   "start_ms": 10880,
+   "end_ms": 11120,
+   "confidence": 0.0
+  },
+  {
+   "word": "있다",
+   "start_ms": 11200,
+   "end_ms": 11200,
+   "confidence": 0.0
+  },
+  {
+   "word": ".",
+   "start_ms": 11200,
+   "end_ms": 11200,
+   "confidence": 0.0
+  },
+  {
+   "word": "청소년은",
+   "start_ms": 11840,
+   "end_ms": 12560,
+   "confidence": 0.0
+  },
+  {
+   "word": "저녁",
+   "start_ms": 12720,
+   "end_ms": 12880,
+   "confidence": 0.0
+  },
+  {
+   "word": "식사",
+   "start_ms": 13040,
+   "end_ms": 13280,
+   "confidence": 0.0
+  },
+  {
+   "word": "직후에",
+   "start_ms": 13440,
+   "end_ms": 13840,
+   "confidence": 0.0
+  },
+  {
+   "word": "낮은",
+   "start_ms": 13920,
+   "end_ms": 14080,
+   "confidence": 0.0
+  },
+  {
+   "word": "육량으로",
+   "start_ms": 14240,
+   "end_ms": 14480,
+   "confidence": 0.0
+  },
+  {
+   "word": "시작해",
+   "start_ms": 14640,
+   "end_ms": 14960,
+   "confidence": 0.0
+  },
+  {
+   "word": "이",
+   "start_ms": 15120,
+   "end_ms": 15200,
+   "confidence": 0.0
+  },
+  {
+   "word": "주마다",
+   "start_ms": 15360,
+   "end_ms": 15600,
+   "confidence": 0.0
+  },
+  {
+   "word": "조금씩",
+   "start_ms": 15920,
+   "end_ms": 16240,
+   "confidence": 0.0
+  },
+  {
+   "word": "올리면",
+   "start_ms": 16400,
+   "end_ms": 16720,
+   "confidence": 0.0
+  },
+  {
+   "word": "대부분",
+   "start_ms": 16880,
+   "end_ms": 16960,
+   "confidence": 0.0
+  },
+  {
+   "word": "적응한다고",
+   "start_ms": 17200,
+   "end_ms": 18000,
+   "confidence": 0.0
+  },
+  {
+   "word": "했다",
+   "start_ms": 18080,
+   "end_ms": 18160,
+   "confidence": 0.0
+  },
+  {
+   "word": ".",
+   "start_ms": 18160,
+   "end_ms": 18160,
+   "confidence": 0.0
+  }
+ ]
+}

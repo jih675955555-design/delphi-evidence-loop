@@ -1,0 +1,304 @@
+{
+ "engine": "parakeet",
+ "model": "nvidia/parakeet-1.1b-rnnt-multilingual-asr",
+ "function_id": "71203149-d3b7-4460-8231-1be2543a1fca",
+ "language": "ko-KR",
+ "mode": "streaming",
+ "audio_sha256": "3436f84b32f0aea47c13d3fa0c5784ce5c2da2c598a7f5f9caa43847fb7582f3",
+ "duration_s": 20.85,
+ "keyterms": [],
+ "boost": 0.0,
+ "cache_key": "dd5c7b4f608b41185c3e466b4a3a58aa",
+ "created_at": "2026-09-28T14:16:56",
+ "text": "산부인과에서 의뢰된 임신성 당뇨산모를 같이 보는데 시기 조절로 혈당이 안 잡히는데도 인슐린을 끝까지 거부하는 분들이 있다. 이럴 때 메트포르민을 쓰고 싶어도 국내 허가가 없어서 쓸 수가 없다. 먹는 약으로 바꿔드리고 싶어도 허가 밥 처방이라 그러지 못한다. 매국 지침에는 있는데 우리만 막혀 있어 답답하다고 했다.",
+ "words": [
+  {
+   "word": "산부인과에서",
+   "start_ms": 320,
+   "end_ms": 1120,
+   "confidence": 0.0
+  },
+  {
+   "word": "의뢰된",
+   "start_ms": 1280,
+   "end_ms": 1520,
+   "confidence": 0.0
+  },
+  {
+   "word": "임신성",
+   "start_ms": 1760,
+   "end_ms": 2080,
+   "confidence": 0.0
+  },
+  {
+   "word": "당뇨산모를",
+   "start_ms": 2240,
+   "end_ms": 3040,
+   "confidence": 0.0
+  },
+  {
+   "word": "같이",
+   "start_ms": 3120,
+   "end_ms": 3280,
+   "confidence": 0.0
+  },
+  {
+   "word": "보는데",
+   "start_ms": 3360,
+   "end_ms": 3520,
+   "confidence": 0.0
+  },
+  {
+   "word": "시기",
+   "start_ms": 3760,
+   "end_ms": 3840,
+   "confidence": 0.0
+  },
+  {
+   "word": "조절로",
+   "start_ms": 4160,
+   "end_ms": 4480,
+   "confidence": 0.0
+  },
+  {
+   "word": "혈당이",
+   "start_ms": 4560,
+   "end_ms": 5040,
+   "confidence": 0.0
+  },
+  {
+   "word": "안",
+   "start_ms": 5120,
+   "end_ms": 5120,
+   "confidence": 0.0
+  },
+  {
+   "word": "잡히는데도",
+   "start_ms": 5200,
+   "end_ms": 5680,
+   "confidence": 0.0
+  },
+  {
+   "word": "인슐린을",
+   "start_ms": 5760,
+   "end_ms": 6240,
+   "confidence": 0.0
+  },
+  {
+   "word": "끝까지",
+   "start_ms": 6320,
+   "end_ms": 6560,
+   "confidence": 0.0
+  },
+  {
+   "word": "거부하는",
+   "start_ms": 6720,
+   "end_ms": 7200,
+   "confidence": 0.0
+  },
+  {
+   "word": "분들이",
+   "start_ms": 7280,
+   "end_ms": 7600,
+   "confidence": 0.0
+  },
+  {
+   "word": "있다",
+   "start_ms": 7680,
+   "end_ms": 7680,
+   "confidence": 0.0
+  },
+  {
+   "word": ".",
+   "start_ms": 7680,
+   "end_ms": 7680,
+   "confidence": 0.0
+  },
+  {
+   "word": "이럴",
+   "start_ms": 8080,
+   "end_ms": 8240,
+   "confidence": 0.0
+  },
+  {
+   "word": "때",
+   "start_ms": 8400,
+   "end_ms": 8400,
+   "confidence": 0.0
+  },
+  {
+   "word": "메트포르민을",
+   "start_ms": 8480,
+   "end_ms": 9440,
+   "confidence": 0.0
+  },
+  {
+   "word": "쓰고",
+   "start_ms": 9440,
+   "end_ms": 9600,
+   "confidence": 0.0
+  },
+  {
+   "word": "싶어도",
+   "start_ms": 9760,
+   "end_ms": 10080,
+   "confidence": 0.0
+  },
+  {
+   "word": "국내",
+   "start_ms": 10160,
+   "end_ms": 10400,
+   "confidence": 0.0
+  },
+  {
+   "word": "허가가",
+   "start_ms": 10480,
+   "end_ms": 10880,
+   "confidence": 0.0
+  },
+  {
+   "word": "없어서",
+   "start_ms": 11040,
+   "end_ms": 11280,
+   "confidence": 0.0
+  },
+  {
+   "word": "쓸",
+   "start_ms": 11360,
+   "end_ms": 11440,
+   "confidence": 0.0
+  },
+  {
+   "word": "수가",
+   "start_ms": 11600,
+   "end_ms": 11680,
+   "confidence": 0.0
+  },
+  {
+   "word": "없다",
+   "start_ms": 11920,
+   "end_ms": 12080,
+   "confidence": 0.0
+  },
+  {
+   "word": ".",
+   "start_ms": 12080,
+   "end_ms": 12080,
+   "confidence": 0.0
+  },
+  {
+   "word": "먹는",
+   "start_ms": 12400,
+   "end_ms": 12640,
+   "confidence": 0.0
+  },
+  {
+   "word": "약으로",
+   "start_ms": 12880,
+   "end_ms": 13120,
+   "confidence": 0.0
+  },
+  {
+   "word": "바꿔드리고",
+   "start_ms": 13280,
+   "end_ms": 13920,
+   "confidence": 0.0
+  },
+  {
+   "word": "싶어도",
+   "start_ms": 14000,
+   "end_ms": 14320,
+   "confidence": 0.0
+  },
+  {
+   "word": "허가",
+   "start_ms": 14480,
+   "end_ms": 14640,
+   "confidence": 0.0
+  },
+  {
+   "word": "밥",
+   "start_ms": 14880,
+   "end_ms": 14880,
+   "confidence": 0.0
+  },
+  {
+   "word": "처방이라",
+   "start_ms": 15120,
+   "end_ms": 15520,
+   "confidence": 0.0
+  },
+  {
+   "word": "그러지",
+   "start_ms": 15680,
+   "end_ms": 16000,
+   "confidence": 0.0
+  },
+  {
+   "word": "못한다",
+   "start_ms": 16080,
+   "end_ms": 16320,
+   "confidence": 0.0
+  },
+  {
+   "word": ".",
+   "start_ms": 16320,
+   "end_ms": 16320,
+   "confidence": 0.0
+  },
+  {
+   "word": "매국",
+   "start_ms": 16720,
+   "end_ms": 16960,
+   "confidence": 0.0
+  },
+  {
+   "word": "지침에는",
+   "start_ms": 17040,
+   "end_ms": 17600,
+   "confidence": 0.0
+  },
+  {
+   "word": "있는데",
+   "start_ms": 17920,
+   "end_ms": 17920,
+   "confidence": 0.0
+  },
+  {
+   "word": "우리만",
+   "start_ms": 18240,
+   "end_ms": 18480,
+   "confidence": 0.0
+  },
+  {
+   "word": "막혀",
+   "start_ms": 18640,
+   "end_ms": 18880,
+   "confidence": 0.0
+  },
+  {
+   "word": "있어",
+   "start_ms": 18960,
+   "end_ms": 18960,
+   "confidence": 0.0
+  },
+  {
+   "word": "답답하다고",
+   "start_ms": 19280,
+   "end_ms": 20160,
+   "confidence": 0.0
+  },
+  {
+   "word": "했다",
+   "start_ms": 20240,
+   "end_ms": 20320,
+   "confidence": 0.0
+  },
+  {
+   "word": ".",
+   "start_ms": 20320,
+   "end_ms": 20320,
+   "confidence": 0.0
+  }
+ ]
+}

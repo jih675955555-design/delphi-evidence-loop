@@ -1,0 +1,20 @@
+{
+ "purpose": "hypothesis",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_name": "hypothesis_v1",
+ "mode": "tool_call",
+ "thinking": null,
+ "usage": {
+  "input": 1086,
+  "output": 509
+ },
+ "created_at": "2026-09-28T14:18:26",
+ "output": {
+  "statement_ko": "국내 의료기관 간에 노인(65세 이상) 신기능 저하 환자에서 메트포르민 용량 조절·중단 기준이 달라 현장 진료 편차가 존재한다.",
+  "statement_en": "Institutional variation exists in metformin dose-adjustment and discontinuation criteria for elderly (≥65 years) patients with renal impairment in Korean clinical practice.",
+  "label_status_guess": "IN_LABEL",
+  "pubmed_query": "metformin[Title/Abstract] AND (elderly[Title/Abstract] OR aged[Title/Abstract]) AND (renal impairment[Title/Abstract] OR chronic kidney disease[Title/Abstract]) AND (dose adjustment[Title/Abstract] OR discontinuation[Title/Abstract]) AND guideline[Title/Abstract]",
+  "ctgov_condition": "Type 2 Diabetes Mellitus AND Renal Impairment AND Elderly"
+ },
+ "reasoning": "The user provides a signal bundle: segment \"노인 65+ · 신기능 저하\" (elderly 65+ with renal impairment), signal_type \"DOSING\", with 7 mentions from 3 HCPs, and several Korean quotes about dosing adjustments based on renal function in elderly patients.\n\nI need to create a hypothesis statement in Korean and English, guess label status (IN_LABEL or DEVELOPMENT), and provide PubMed and ClinicalTrials.gov search queries.\n\nFrom the quotes: \n- Hospitals have different criteria for dose reduction/discontinuation based on renal function in elderly\n- Need unified guidelines\n- eGFR <45: don't initiate newly\n- Some hospitals check renal function every 3 months and adjust metformin dose accordingly\n- eGFR <45: don't exceed 1000mg/day; <30: discontinue\n- On days with poor oral intake, hold dose\n- Transferred patients often need re-titration due to different criteria\n\nThis is about dosing practices in elderly with renal impairment. Metformin labeling already has renal function contraindications and dose adjustments (eGFR <30 contraindicated, 30-45 caution). So this is likely IN_LABEL - the discussions are about implementing existing label guidance, though there's variability in practice.\n\nHypothesis: There is variability in metformin dose adjustment practices for elderly patients with renal impairment across institutions, despite existing label guidance.\n\nLet me formulate the hypothesis and search queries."
+}

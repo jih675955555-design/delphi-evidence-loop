@@ -29,6 +29,16 @@ class LlmUnavailable(RuntimeError):
     pass
 
 
+def _env_value(raw: str) -> str:
+    """dotenv rules: a quoted value runs to its closing quote; an unquoted one ends where whitespace + «#» starts a
+    same-line comment. `STT_BOOST=2   # 설명` is «2» — copying a line from .env.example and editing it must not put
+    the comment into the value (a float() on it took the /collect page down) — while `a#b` keeps its «#»."""
+    v = raw.strip()
+    if v[:1] in ("'", '"') and v.find(v[0], 1) > 0:
+        return v[1:v.find(v[0], 1)]
+    return re.sub(r"\s+#.*", "", v).strip().strip('"').strip("'")
+
+
 def load_env() -> None:
     for path in ENV_FILES:
         if not path.exists():
@@ -38,7 +48,14 @@ def load_env() -> None:
             if not line or line.startswith("#") or "=" not in line:
                 continue
             k, v = line.split("=", 1)
-            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+            k = k.strip().removeprefix("export ").strip()
+            os.environ.setdefault(k, _env_value(v))
+
+
+def env(name: str, default: str = "") -> str:
+    """A setting from the environment (after .env). An empty value counts as unset — `STT_BOOST=` means the default."""
+    load_env()
+    return os.environ.get(name, "").strip() or default
 
 
 def api_key() -> str:

@@ -1,0 +1,340 @@
+{
+ "engine": "parakeet",
+ "model": "nvidia/parakeet-1.1b-rnnt-multilingual-asr",
+ "function_id": "71203149-d3b7-4460-8231-1be2543a1fca",
+ "language": "ko-KR",
+ "mode": "streaming",
+ "audio_sha256": "2d77b82dc4a2abd0e926d7a266b8b65f8f10dd1c9871b57b1f73ce42119e587d",
+ "duration_s": 25.71,
+ "keyterms": [],
+ "boost": 0.0,
+ "cache_key": "e7ef7f5eabdb035701a316525949bf2a",
+ "created_at": "2026-09-28T14:16:36",
+ "text": "요연병원에 개신여든 넘은 어르신들은 석달마다 신장키는 검사를 다시하고 그 수치에 맞춰 매트포르밍 용량을 조절한다. 신장키는 수치가 사십오 아래로 내려가면 하루 천밀리그램을 넘기지 않고 삼십아래면 끊는다. 식사를 거의 못하시는 날에는 그날 약을 시도로 간호사에게 미리 잃어둔다. 다른 병원에서 옮겨 온 환자는 감량 기준이 달라서 용량을 처음부터 다시 맞추는 일이 많다고 했다.",
+ "words": [
+  {
+   "word": "요연병원에",
+   "start_ms": 160,
+   "end_ms": 1040,
+   "confidence": 0.0
+  },
+  {
+   "word": "개신여든",
+   "start_ms": 1280,
+   "end_ms": 1760,
+   "confidence": 0.0
+  },
+  {
+   "word": "넘은",
+   "start_ms": 1760,
+   "end_ms": 2080,
+   "confidence": 0.0
+  },
+  {
+   "word": "어르신들은",
+   "start_ms": 2240,
+   "end_ms": 2560,
+   "confidence": 0.0
+  },
+  {
+   "word": "석달마다",
+   "start_ms": 2800,
+   "end_ms": 3360,
+   "confidence": 0.0
+  },
+  {
+   "word": "신장키는",
+   "start_ms": 3600,
+   "end_ms": 4160,
+   "confidence": 0.0
+  },
+  {
+   "word": "검사를",
+   "start_ms": 4240,
+   "end_ms": 4560,
+   "confidence": 0.0
+  },
+  {
+   "word": "다시하고",
+   "start_ms": 4640,
+   "end_ms": 5040,
+   "confidence": 0.0
+  },
+  {
+   "word": "그",
+   "start_ms": 5200,
+   "end_ms": 5200,
+   "confidence": 0.0
+  },
+  {
+   "word": "수치에",
+   "start_ms": 5440,
+   "end_ms": 5680,
+   "confidence": 0.0
+  },
+  {
+   "word": "맞춰",
+   "start_ms": 5760,
+   "end_ms": 6000,
+   "confidence": 0.0
+  },
+  {
+   "word": "매트포르밍",
+   "start_ms": 6160,
+   "end_ms": 6720,
+   "confidence": 0.0
+  },
+  {
+   "word": "용량을",
+   "start_ms": 6960,
+   "end_ms": 7200,
+   "confidence": 0.0
+  },
+  {
+   "word": "조절한다",
+   "start_ms": 7280,
+   "end_ms": 7680,
+   "confidence": 0.0
+  },
+  {
+   "word": ".",
+   "start_ms": 7680,
+   "end_ms": 7680,
+   "confidence": 0.0
+  },
+  {
+   "word": "신장키는",
+   "start_ms": 8240,
+   "end_ms": 8880,
+   "confidence": 0.0
+  },
+  {
+   "word": "수치가",
+   "start_ms": 9040,
+   "end_ms": 9360,
+   "confidence": 0.0
+  },
+  {
+   "word": "사십오",
+   "start_ms": 9440,
+   "end_ms": 9600,
+   "confidence": 0.0
+  },
+  {
+   "word": "아래로",
+   "start_ms": 9920,
+   "end_ms": 10240,
+   "confidence": 0.0
+  },
+  {
+   "word": "내려가면",
+   "start_ms": 10320,
+   "end_ms": 10800,
+   "confidence": 0.0
+  },
+  {
+   "word": "하루",
+   "start_ms": 10880,
+   "end_ms": 11040,
+   "confidence": 0.0
+  },
+  {
+   "word": "천밀리그램을",
+   "start_ms": 11200,
+   "end_ms": 12000,
+   "confidence": 0.0
+  },
+  {
+   "word": "넘기지",
+   "start_ms": 12080,
+   "end_ms": 12480,
+   "confidence": 0.0
+  },
+  {
+   "word": "않고",
+   "start_ms": 12560,
+   "end_ms": 12640,
+   "confidence": 0.0
+  },
+  {
+   "word": "삼십아래면",
+   "start_ms": 12880,
+   "end_ms": 13440,
+   "confidence": 0.0
+  },
+  {
+   "word": "끊는다",
+   "start_ms": 13600,
+   "end_ms": 14080,
+   "confidence": 0.0
+  },
+  {
+   "word": ".",
+   "start_ms": 14080,
+   "end_ms": 14080,
+   "confidence": 0.0
+  },
+  {
+   "word": "식사를",
+   "start_ms": 14400,
+   "end_ms": 14720,
+   "confidence": 0.0
+  },
+  {
+   "word": "거의",
+   "start_ms": 14880,
+   "end_ms": 15040,
+   "confidence": 0.0
+  },
+  {
+   "word": "못하시는",
+   "start_ms": 15200,
+   "end_ms": 15600,
+   "confidence": 0.0
+  },
+  {
+   "word": "날에는",
+   "start_ms": 15680,
+   "end_ms": 16000,
+   "confidence": 0.0
+  },
+  {
+   "word": "그날",
+   "start_ms": 16240,
+   "end_ms": 16400,
+   "confidence": 0.0
+  },
+  {
+   "word": "약을",
+   "start_ms": 16560,
+   "end_ms": 16800,
+   "confidence": 0.0
+  },
+  {
+   "word": "시도로",
+   "start_ms": 16960,
+   "end_ms": 17200,
+   "confidence": 0.0
+  },
+  {
+   "word": "간호사에게",
+   "start_ms": 17280,
+   "end_ms": 17840,
+   "confidence": 0.0
+  },
+  {
+   "word": "미리",
+   "start_ms": 18080,
+   "end_ms": 18240,
+   "confidence": 0.0
+  },
+  {
+   "word": "잃어둔다",
+   "start_ms": 18320,
+   "end_ms": 18880,
+   "confidence": 0.0
+  },
+  {
+   "word": ".",
+   "start_ms": 18880,
+   "end_ms": 18880,
+   "confidence": 0.0
+  },
+  {
+   "word": "다른",
+   "start_ms": 19120,
+   "end_ms": 19120,
+   "confidence": 0.0
+  },
+  {
+   "word": "병원에서",
+   "start_ms": 19360,
+   "end_ms": 19920,
+   "confidence": 0.0
+  },
+  {
+   "word": "옮겨",
+   "start_ms": 20080,
+   "end_ms": 20320,
+   "confidence": 0.0
+  },
+  {
+   "word": "온",
+   "start_ms": 20480,
+   "end_ms": 20560,
+   "confidence": 0.0
+  },
+  {
+   "word": "환자는",
+   "start_ms": 20720,
+   "end_ms": 21040,
+   "confidence": 0.0
+  },
+  {
+   "word": "감량",
+   "start_ms": 21120,
+   "end_ms": 21280,
+   "confidence": 0.0
+  },
+  {
+   "word": "기준이",
+   "start_ms": 21600,
+   "end_ms": 21920,
+   "confidence": 0.0
+  },
+  {
+   "word": "달라서",
+   "start_ms": 22000,
+   "end_ms": 22320,
+   "confidence": 0.0
+  },
+  {
+   "word": "용량을",
+   "start_ms": 22480,
+   "end_ms": 22960,
+   "confidence": 0.0
+  },
+  {
+   "word": "처음부터",
+   "start_ms": 23040,
+   "end_ms": 23280,
+   "confidence": 0.0
+  },
+  {
+   "word": "다시",
+   "start_ms": 23600,
+   "end_ms": 23600,
+   "confidence": 0.0
+  },
+  {
+   "word": "맞추는",
+   "start_ms": 23840,
+   "end_ms": 24320,
+   "confidence": 0.0
+  },
+  {
+   "word": "일이",
+   "start_ms": 24400,
+   "end_ms": 24560,
+   "confidence": 0.0
+  },
+  {
+   "word": "많다고",
+   "start_ms": 24720,
+   "end_ms": 24880,
+   "confidence": 0.0
+  },
+  {
+   "word": "했다",
+   "start_ms": 25040,
+   "end_ms": 25120,
+   "confidence": 0.0
+  },
+  {
+   "word": ".",
+   "start_ms": 25120,
+   "end_ms": 25120,
+   "confidence": 0.0
+  }
+ ]
+}

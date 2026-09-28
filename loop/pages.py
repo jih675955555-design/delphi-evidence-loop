@@ -1,5 +1,5 @@
-"""Pages — overview, claims, hypotheses, one hypothesis, checklist. Same renderers serve the web console
-(with controls) and the static report (without)."""
+"""Pages — overview, collection, notes, claims, hypotheses, one hypothesis, checklist. Same renderers serve the
+web console (with controls) and the static report (without)."""
 from __future__ import annotations
 
 import json
@@ -19,8 +19,9 @@ def demo_card(state: dict, contract: dict, notes_n: int, web: bool = True) -> st
     segs = " · ".join(esc(s) for s in contract["segments"])
     sigs = "".join(f'<li><b>{esc(code)}</b> — {esc(ko)}</li>' for code, ko in SIGNAL_KO.items())
     notes_link = '<a href="/notes">면담 기록 보기</a>' if web else '<a href="#notes">면담 기록 보기</a>'
+    collect_link = '<a href="/collect">현장 수집</a>' if web else "현장 수집(웹 콘솔)"
     steps = ("<ol class=\"steps\">"
-             f"<li>{notes_link} — 무엇이 입력인지 먼저 읽는다 (합성 12건, 한국어)</li>"
+             f"<li>{notes_link} — 무엇이 입력인지 먼저 읽는다 (면담 {notes_n}건 · 한국어). 새 면담은 {collect_link}에서 대본을 듣고 받아 적어 넣는다</li>"
              "<li><b>① 추출 실행</b> — 발언 카드 30장이 생기고, 인용마다 원문 위치가 붙는다</li>"
              "<li><b>가설 HYP-003</b>을 연다 — 유방암 환자가 보조요법으로 요청하는 신호</li>"
              "<li><b>② 근거 교차검증</b> — PubMed·CT.gov·라벨을 읽고 지지/반대/중립을 인용과 함께 표시</li>"
@@ -28,7 +29,7 @@ def demo_card(state: dict, contract: dict, notes_n: int, web: bool = True) -> st
              "<li><b>④ 심의 → ⑤ 결정</b> — 임원 에이전트 7인이 토론하고 간사가 회의록을 쓴다. 결정하면 후속 질문이 체크리스트에 들어간다</li></ol>")
     return (f'<div class="card"><b>데모 안내</b> <span class="sub">— 의료진 면담 기록을 환자군 × 신호 유형으로 세고, 문턱을 넘은 조합을 공개 근거로 검증한 뒤, 사람이 서명·결정한 후속 질문을 다음 면담으로 보내는 과정을 실행해 볼 수 있다.</span>'
             f'<div class="grid" style="grid-template-columns:1fr 1fr;margin-top:10px">'
-            f'<div><div class="eyebrow">입력</div>{esc(contract["drug_ko"])}에 관한 <b>합성 면담 기록 {notes_n}건</b> (가상 의료진 {notes_n}인 · 한국어 · 실제 인물·기관 없음). {notes_link}.'
+            f'<div><div class="eyebrow">입력</div>{esc(contract["drug_ko"])}에 관한 <b>합성 면담 기록 {notes_n}건</b> (가상 의료진 {len({n["hcp_ref"] for n in load_notes()})}인 · 한국어 · 실제 인물·기관 없음). {notes_link}.'
             f'<div class="eyebrow" style="margin-top:10px">무엇을 뽑나 — 사람이 정한 고정 헤더</div><b>환자군 {len(contract["segments"])}</b>: {segs}<br><b>신호 유형 {len(SIGNAL_KO)}</b>:<ul style="margin:4px 0 0">{sigs}</ul>'
             f'<div class="faint" style="margin-top:6px">「써봤다」와 「막혔다」는 규제상 다른 신호이므로 구분한다. 유해사례로 읽히는 발언은 별도 경로로 보낸다.</div></div>'
             f'<div><div class="eyebrow">보는 순서 (5분)</div>{steps}'
@@ -208,6 +209,30 @@ def overview(state: dict, contract: dict, banner: str = "", web: bool = True) ->
     return shell("개요", "\n".join(body), "/console", banner)
 
 
+def origin(n: dict) -> str:
+    """Where a note's text came from — typed synthetic text, a script read by TTS and heard by STT, or a recording."""
+    t = n.get("stt")
+    if t and t.get("script_id"):
+        tts_name = "Chatterbox" if "chatterbox" in ((t.get("tts") or {}).get("model") or "") else "TTS"
+        cer = f' · CER {round(t["cer"] * 100, 1):.1f}%' if isinstance(t.get("cer"), (int, float)) else ""
+        return (f'<span class="chip st">대본 수집 · {esc(t["script_id"])} · {tts_name} → {esc((t.get("engine") or "").capitalize())} · '
+                f'{t["duration_s"]}초{cer}</span>')
+    return f'<span class="chip st">음성 전사 · {esc(t["model"])} · {t["duration_s"]}초</span>' if t else "합성"
+
+
+UPLOAD_FORM = (
+    '<form method="post" action="/run/transcribe" enctype="multipart/form-data" class="card">'
+    '<b>면담 음성 올리기</b> — NVIDIA 호스팅 ASR 이 한국어로 전사해 면담 기록 한 건으로 넣는다. 음성 파일은 저장하지 않고 해시만 남긴다.<br>'
+    '<input type="file" name="audio" accept="audio/*,.wav,.m4a,.mp3,.ogg,.opus,.flac" required> '
+    '<input type="text" name="hcp" placeholder="의료진 (예: HCP-13)" required> '
+    '<input type="text" name="specialty" placeholder="전문과 · 기관" required> '
+    '<input type="date" name="date" required> '
+    '<input type="text" name="consent_by" placeholder="녹음 동의 확인자 이름" required> '
+    '<select name="engine"><option value="parakeet">Parakeet 1.1B 다국어 (NVIDIA · 기본)</option>'
+    '<option value="whisper">Whisper Large v3 (OpenAI)</option></select> '
+    '<button class="btn">전사해서 넣기</button></form>')
+
+
 def note_cards(state: dict, notes: list[dict], web: bool = True) -> str:
     """Each field note with its verified claims highlighted in place — the evidence pointer made visible."""
     by_doc: dict[str, list] = {}
@@ -223,17 +248,26 @@ def note_cards(state: dict, notes: list[dict], web: bool = True) -> str:
         k = len([1 for c, cls in by_doc.get(n["doc_id"], []) if cls != "ae"])
         ae = len([1 for c, cls in by_doc.get(n["doc_id"], []) if cls == "ae"])
         tally = (f'<span class="chip st">발언 카드 {k}</span>' if k else "") + (f'<span class="chip oppose">유해사례 후보 {ae}</span>' if ae else "")
-        out.append(f'<div class="note" id="{esc(n["doc_id"])}"><div class="meta"><span class="mono">{esc(n["doc_id"])}</span> · {esc(n["hcp_ref"])} · {esc(n["specialty"])} · {esc(n["date"])} · 합성 {tally}</div>'
+        out.append(f'<div class="note" id="{esc(n["doc_id"])}"><div class="meta"><span class="mono">{esc(n["doc_id"])}</span> · {esc(n["hcp_ref"])} · {esc(n["specialty"])} · {esc(n["date"])} · {origin(n)} {tally}</div>'
                    f'{highlight(n["text"], spans)}</div>')
     return "".join(out)
 
 
+COLLECT_CARD = ('<div class="card"><div class="row"><div class="grow"><b>현장 수집</b> <span class="sub">— 저장소의 합성 면담 대본을 '
+                'Chatterbox(TTS)가 읽고, 그 음성을 Parakeet(STT)가 듣고 받아 적어 면담 기록 한 건으로 넣는다. 듣는 동안 받아 적는 글이 화면에 올라온다.</span></div>'
+                '<a class="btn" href="/collect">현장 수집으로 →</a></div></div>')
+
+
 def notes_page(state: dict, contract: dict, banner: str = "", web: bool = True) -> str:
     notes = load_notes()
+    syn = [n for n in notes if not n.get("stt")]
+    scripted = [n for n in notes if (n.get("stt") or {}).get("script_id")]
+    recorded = len(notes) - len(syn) - len(scripted)
+    extra = (f" · 대본 수집 {len(scripted)}건" if scripted else "") + (f" · 음성 전사 {recorded}건" if recorded else "")
     body = ['<div class="eyebrow">Input</div><h1>면담 기록</h1>',
-            f'<p class="sub">{tag("fact")}이 루프의 입력. 의학부 담당자가 의료진을 만나고 남기는 기록을 본떠 <b>합성</b>한 {len(notes)}건이다(가상 의료진 {len(notes)}인, 실제 인물·기관·발언 없음). '
+            f'<p class="sub">{tag("fact")}이 루프의 입력. 의학부 담당자가 의료진을 만나고 남기는 기록을 본떠 <b>합성</b>한 {len(syn)}건이다(가상 의료진 {len({n["hcp_ref"] for n in syn})}인, 실제 인물·기관·발언 없음){extra}. '
             f'약은 {esc(contract["drug_ko"])}. 추출을 실행하면 모델이 고른 발언이 <mark>원문 위에 표시</mark>되고, 유해사례로 읽힌 발언은 <mark class="ae">따로 표시</mark>된다 — 표시된 자리가 곧 코드가 검증한 원문 위치다.</p>',
-            note_cards(state, notes, web)]
+            COLLECT_CARD if web else "", UPLOAD_FORM if web else "", note_cards(state, notes, web)]
     return shell("면담 기록", "\n".join(body), "/notes", banner, band=band(state))
 
 
@@ -510,3 +544,364 @@ def static_report(state: dict, contract: dict) -> str:
             f'<tr><td class="mono">{esc(a["id"])}</td><td><b>{esc(a["question_ko"])}</b></td><td class="faint">{esc(a["why_ko"])}</td><td class="faint">{esc(a["approved_by"])} · {esc(a["approved_at"])}</td></tr>'
             for a in state["actions"]) + "</table>")
     return shell("리포트", "\n".join(parts), "/", static=True)
+
+
+# ── ⓪ 현장 수집 — script → TTS → listen while STT listens → field note ─────────
+
+LISTEN_LABEL = {"replay": "저장된 전사를 음성 시각에 맞춰 보여준다 — 모델 호출 없음"}
+
+
+def _listen_labels() -> dict:
+    from . import stt
+    try:
+        boost = stt.settings("parakeet")["boost"]
+    except stt.SttUnavailable:   # the page shows the settings error and no live button
+        boost = 0.0
+    return {**LISTEN_LABEL, "live": "STT가 듣는 중 — 실시간 전사 (Parakeet 1.1B 다국어 · 스트리밍 · "
+                                     + ("단어 가중 없음)" if not boost else f"단어 가중 {boost:g})")}
+
+
+def collect_rows(state: dict, contract: dict) -> list[dict]:
+    """One row per script, for the list page and /collect/scripts.json. Current counts are sense.tally's."""
+    from . import collect
+    from .sense import tally
+    done = collect.collected(load_notes())
+    by = {(r["segment"], r["signal_type"]): r for r in tally(state)}
+    thr = contract["threshold"]
+    stt_err = collect.stt_problem()   # a bad STT setting hides saved transcripts (their cache key needs it), never a 500
+    rows = []
+    for s in collect.list_scripts(contract):
+        sid = s["script_id"]
+        if "_error" in s:
+            rows.append({"script_id": sid, "title_ko": s.get("title_ko", ""), "_error": s["_error"], "github_url": collect.blob_url(sid)})
+            continue
+        a = collect.audio(s)
+        it = s["intent"]
+        cur = by.get((it["segment"], it["signal_type"]), {"mentions": 0, "hcps": 0})
+        live = collect.live_read(sid)
+        heard = bool(a and live and live.get("status") == "DONE" and live.get("audio_sha256") == a["audio_sha256"])
+        row = {"script_id": sid, "title_ko": s["title_ko"], "hcp_ref": s["hcp_ref"], "specialty": s["specialty"], "date": s["date"],
+               "chars": s["chars"], "intent": it,
+               "current": {"mentions": cur["mentions"], "hcps": cur["hcps"],
+                           "passed": cur["mentions"] >= thr["min_mentions"] and cur["hcps"] >= thr["min_hcps"]},
+               "audio": {"duration_s": a["duration_s"], "audio_sha256": a["audio_sha256"], "source": a["source"]} if a else None,
+               "transcript_ready": heard or bool(a and not stt_err and collect.saved_transcript(s)),
+               "collected_doc_id": done[sid]["doc_id"] if sid in done else None, "github_url": collect.blob_url(sid)}
+        if s.get("_warn"):
+            row["_warn"] = s["_warn"]
+        rows.append(row)
+    return rows
+
+
+def _source_line() -> str:
+    from . import collect
+    src = collect.source_info()
+    sha = f' (커밋 <span class="mono">{esc(src["commit"][:7])}</span>)' if src["commit"] else ""
+    if src["repo"]:
+        ref = src["ref"] or src["commit"]
+        where = (f'GitHub <a href="https://github.com/{esc(src["repo"])}/tree/{esc(ref)}/{esc(src["path"])}" target="_blank" rel="noopener">'
+                 f'{esc(src["repo"])}</a> · {esc(src["path"])} @ {esc(ref)}')
+    else:
+        where = f'{esc(src["path"])}'
+    return f'<div class="faint" style="margin:6px 0 10px">{tag("fact")}출처 {where} · 저장소 사본{sha}</div>'
+
+
+def _stt_problem_card(err: str | None) -> str:
+    if not err:
+        return ""
+    return (f'<div class="card gate">{tag("fact")}<b>STT 설정을 쓸 수 없다</b> — {esc(err)}'
+            '<div class="faint" style="margin-top:4px">고칠 때까지 저장된 전사 재생과 실시간 듣기를 멈춘다. 대본과 음성은 그대로 보인다.</div></div>')
+
+
+def _state_cell(r: dict) -> str:
+    if r.get("collected_doc_id"):
+        d = esc(r["collected_doc_id"])
+        return f'<span class="chip support">수집됨</span><br><a href="/notes#{d}" class="mono">→ {d}</a>'
+    if r["transcript_ready"]:
+        return '<span class="chip st">전사 있음</span>'
+    if r["audio"]:
+        return '<span class="chip st">음성 있음</span>'
+    return '<span class="faint">음성 없음</span>'
+
+
+def _effect_panel(state: dict, contract: dict) -> str:
+    from . import collect
+    eff = collect.effect(state, contract, load_notes())
+    mm, mh = eff["threshold"]
+    p = ['<h2 id="effect">이번 수집이 바꾼 것</h2>',
+         f'<p class="sub">{tag("pattern")}수집한 면담 기록의 발언 카드를 빼고 센 집계(전)와 넣고 센 집계(후). 둘 다 코드가 센다 — 문턱 {mm}회·{mh}인.</p>']
+    if not eff["docs"]:
+        p.append('<p class="sub">아직 대본에서 수집한 면담 기록이 없다 — 대본을 열어 듣고, 동의를 확인해 저장하면 여기에 생긴다.</p>')
+        return "\n".join(p)
+    if eff["pending_docs"]:
+        p.append(f'<div class="card gate">{tag("fact")}추출 전 {len(eff["pending_docs"])}건 — '
+                 + ", ".join(f'<a href="/notes#{esc(d)}" class="mono">{esc(d)}</a>' for d in eff["pending_docs"])
+                 + ' · 위의 <b>다음 단계 — ① 추출 실행</b>을 누르면 집계에 들어간다.</div>')
+    if eff["rows"]:
+        rows = []
+        for r in eff["rows"]:
+            (bm, bh), (am, ah) = r["before"], r["after"]
+            if r["passed_after"]:
+                gate = '<span class="chip support">문턱 통과</span>'
+            else:
+                miss = " · ".join(x for x in ((f"언급 {r['need_mentions']}회" if r["need_mentions"] else ""),
+                                              (f"의료진 {r['need_hcps']}인" if r["need_hcps"] else "")) if x)
+                gate = f'<span class="chip hold">미달</span> <span class="faint">{miss} 모자람</span>'
+            hid = r["hypothesis_id"]
+            hyp = (f'<a href="/hypotheses/{esc(hid)}"><b>{esc(hid)}</b></a><br>'
+                   + ('<span class="chip st" style="white-space:nowrap">이번 수집으로 생긴 초안</span>' if r["new_hypothesis"] else '<span class="faint">이미 있던 가설</span>')
+                   if hid else '<span class="faint">—</span>')
+            rows.append(f'<tr><td>{esc(r["segment"])} × {signal(r["signal_type"])}</td><td class="n">{bm}회/{bh}인</td>'
+                        f'<td class="n">→ <b>{am}회/{ah}인</b></td><td>{gate}</td><td>{hyp}</td></tr>')
+        p.append('<table><tr><th>환자군 × 신호 유형</th><th>전</th><th>후</th><th>문턱 (코드)</th><th>가설</th></tr>' + "".join(rows) + "</table>")
+    extra = []
+    if eff["safety_added"]:
+        extra.append(f'{tag("fact")}유해사례 후보 {eff["safety_added"]}건 → <a href="/claims#safety">safety 큐</a> (집계에 넣지 않는다)')
+    if eff["dropped"]:
+        extra.append(f'{tag("fact")}원문에서 인용을 찾지 못해 버린 발언 {eff["dropped"]}건 — 세지 않는다')
+    if eff["new_hypotheses"]:
+        links = ", ".join(f'<a href="/hypotheses/{esc(h)}"><b>{esc(h)}</b></a>' for h in eff["new_hypotheses"])
+        extra.append(f'{tag("interp")}새 가설 {links} — 여기서부터는 이미 있는 흐름이다: ② 근거 교차검증 → ③ 서명 → ④ 심의 → ⑤ 결정 → 체크리스트')
+    if extra:
+        p.append('<div class="card">' + "<br>".join(extra) + "</div>")
+    return "\n".join(p)
+
+
+def collect_page(state: dict, contract: dict, banner: str = "") -> str:
+    from . import collect
+    rows = collect_rows(state, contract)
+    thr = contract["threshold"]
+    notes = load_notes()
+    original = sum(1 for n in notes if not (n.get("stt") or {}).get("script_id"))
+    body = ['<div class="eyebrow">Collect · 현장 수집</div><h1>현장 수집 — 대본을 듣고 받아 적는다</h1>',
+            f'<p class="sub">{tag("fact")}의학부 담당자가 면담을 녹음해 오는 자리를 데모로 옮겼다. 저장소에 있는 <b>합성 면담 대본</b>을 '
+            'Chatterbox(TTS)가 읽고, 평가자가 그 음성을 듣는 동안 Parakeet(STT)가 <b>같은 음성 파일</b>을 실제 속도로 들으며 받아 적는다. '
+            '받아 적은 글이 녹음 동의 확인을 거쳐 면담 기록 한 건이 되면, 그다음은 이미 있는 흐름(① 추출 → 가설 → 근거 → 서명 → 심의 → 결정)이 그대로 이어진다.</p>',
+            _source_line(), _stt_problem_card(collect.stt_problem())]
+    trs = []
+    for r in rows:
+        sid = esc(r["script_id"])
+        gh = f'<a href="{esc(r["github_url"])}" target="_blank" rel="noopener">GitHub에서 보기</a>' if r.get("github_url") else '<span class="faint">—</span>'
+        if "_error" in r:
+            trs.append(f'<tr><td class="mono">{sid}</td><td colspan="5"><span class="chip oppose">형식 오류</span> {esc(r["_error"])}</td><td>{gh}</td></tr>')
+            continue
+        it, cur = r["intent"], r["current"]
+        secs = f' · {r["audio"]["duration_s"]:.1f}초' if r["audio"] else ""
+        warn = f'<br><span class="chip hold">{esc(r["_warn"])}</span>' if r.get("_warn") else ""
+        trs.append(f'<tr><td><a href="/collect/{sid}"><b class="mono">{sid}</b></a><br><a href="/collect/{sid}">{esc(r["title_ko"])}</a>{warn}</td>'
+                   f'<td><span class="mono">{esc(r["hcp_ref"])}</span><br><span class="faint">{esc(r["specialty"])}<br>{esc(r["date"])}</span></td>'
+                   f'<td class="n">{r["chars"]}자{secs}</td>'
+                   f'<td title="{esc(it["why_ko"])}">{esc(it["segment"])} × {signal(it["signal_type"])}<br>'
+                   f'<span class="faint">{tag("pattern")}지금 {cur["mentions"]}회/{cur["hcps"]}인 · 문턱 {thr["min_mentions"]}회·{thr["min_hcps"]}인</span></td>'
+                   f'<td style="white-space:nowrap">{_state_cell(r)}</td><td><a class="btn sm" href="/collect/{sid}">열기</a></td><td>{gh}</td></tr>')
+    body.append('<table><tr><th>대본</th><th>의료진 · 전문과 · 날짜</th><th>길이</th><th>작성 의도 (지금 집계)</th><th>상태</th><th></th><th>원본</th></tr>'
+                + "".join(trs) + "</table>" if trs else '<p class="sub">data/field_scripts/ 에 대본이 없다.</p>')
+    try:
+        checklist = json.loads(store.FIELD_CHECKLIST.read_text()) if store.FIELD_CHECKLIST.exists() else []
+    except ValueError:
+        checklist = []
+    open_q = [a for a in checklist if a.get("status", "OPEN") == "OPEN"]
+    if open_q:
+        qs = "".join(f'<li>{esc(a["question_ko"])} <span class="faint mono">{esc(a["hypothesis_id"])}</span></li>' for a in open_q[:5])
+        body.append(f'<div class="card"><b>{tag("action")}이번 면담에서 물을 질문</b> <span class="faint">— 사람이 결정한 체크리스트 (<a href="/checklist">전체</a>). '
+                    f'대본은 이 질문과 따로 쓴 합성 면담이다.</span><ul>{qs}</ul></div>')
+    body.append(f'<div class="card" id="next"><div class="row"><div class="grow"><b>다음 단계 — ① 추출</b> <span class="sub">수집한 면담 기록을 기존 추출에 넣는다. '
+                'Nemotron이 발언을 고르고 인용하면, 코드가 인용을 원문에서 찾아 검증하고 세어 문턱을 넘은 조합을 가설로 만든다. 개요의 ① 추출과 같은 단계다.</span></div>'
+                + button("다음 단계 — ① 추출 실행", "/run/collect/sense") + '</div>'
+                f'<div class="row"><div class="grow faint">다음 평가자를 위해 — 대본에서 수집한 면담 기록과 그로부터 생긴 발언 카드·가설 초안만 지운다. '
+                f'원래 면담 {original}건과 사람이 서명한 기록은 그대로 둔다.</div>' + button("수집 되돌리기", "/run/collect/reset", ghost=True) + '</div>'
+                '<div class="row"><div class="grow faint">저장소 사본이 GitHub의 같은 파일과 같은지 해시로 대조한다 (읽기만 한다).</div>'
+                + button("GitHub 원본과 대조", "/run/collect/verify", ghost=True) + '</div></div>')
+    body.append(_effect_panel(state, contract))
+    return shell("현장 수집", "\n".join(body), "/collect", banner, band=band(state))
+
+
+def miss_marks(hyp: str, ref: str) -> str:
+    """Escape the transcript and mark what differs from the script — same normalisation as stt.cer
+    (case, spaces and punctuation ignored), aligned by difflib. A dropped stretch marks the character after it."""
+    import difflib
+    import re
+    keep = [i for i, ch in enumerate(hyp) if re.match(r"[^\W_]", ch)]
+    h = "".join(hyp[i].lower() for i in keep)
+    r = re.sub(r"[\s\W_]+", "", (ref or "").lower())
+    if len(h) != len(keep):   # lower() changed a length — skip the marks rather than misplace them
+        return esc(hyp)
+    bad: set[int] = set()
+    for op, i1, i2, _, _ in difflib.SequenceMatcher(None, h, r, autojunk=False).get_opcodes():
+        if op in ("replace", "delete"):
+            bad.update(keep[i] for i in range(i1, i2))
+        elif op == "insert" and keep:
+            bad.add(keep[min(i1, len(keep) - 1)])
+    out, run = [], []
+    for i, ch in enumerate(hyp):
+        if i in bad:
+            run.append(ch)
+            continue
+        if run:
+            out.append(f'<mark class="miss">{esc("".join(run))}</mark>')
+            run = []
+        out.append(esc(ch))
+    if run:
+        out.append(f'<mark class="miss">{esc("".join(run))}</mark>')
+    return "".join(out)
+
+
+COLLECT_JS = """<script>
+(function(){
+const SID=%(sid)s, LABEL=%(labels)s, RUNNING=%(running)s, BACKSTOP_MS=%(backstop_ms)s;
+const audio=document.getElementById('player'), heard=document.getElementById('heard'), st=document.getElementById('lstatus');
+const btns=[...document.querySelectorAll('[data-listen]')];
+let reloading=false, gen=0, endedAt=0, lastSig='', lastChange=Date.now(), gaveUp=false;
+if(audio)audio.addEventListener('ended',()=>{endedAt=Date.now();});
+function say(msg,dot){if(!st)return;st.textContent='';if(dot){const d=document.createElement('span');d.className='dot';st.appendChild(d);}st.appendChild(document.createTextNode(msg||''));}
+function enable(on){btns.forEach(b=>{b.disabled=!on;});}
+function render(j){heard.textContent='';const f=document.createElement('span');f.textContent=(j.finals||[]).join(' ');heard.appendChild(f);
+const i=document.createElement('span');i.className='interim'+(j.status==='RUNNING'?' caret':'');i.textContent=j.interim?((f.textContent?' ':'')+j.interim):'';heard.appendChild(i);}
+function reload(){if(reloading)return;reloading=true;setTimeout(()=>location.reload(),1200);}
+// the server cuts a stalled stream at its deadline and gives up a stuck one at its watchdog time, then says ERROR;
+// this is only the backstop for when that answer never comes (both limits are past the server's own)
+function stalled(j){const sig=(j.updated_at||'')+'|'+(j.finals||[]).join(' ').length+'|'+(j.interim||'').length,now=Date.now();
+if(sig!==lastSig){lastSig=sig;lastChange=now;}return (endedAt&&now-endedAt>BACKSTOP_MS)||now-lastChange>(j.duration_s||0)*1000+BACKSTOP_MS;}
+async function poll(g){if(g!==gen)return;let j;try{const r=await fetch('/collect/'+SID+'/listen.json',{cache:'no-store'});j=await r.json();}catch(e){say('연결 재시도 중',true);setTimeout(()=>poll(g),1000);return;}
+if(g!==gen)return;
+if(j.status==='RUNNING'){render(j);
+if(stalled(j)){if(!gaveUp){gaveUp=true;say('STT 응답이 멈춘 것 같습니다 — 음성이 끝났는데 결과가 오지 않습니다. 다시 누르면 처음부터 듣습니다.',false);enable(true);}
+setTimeout(()=>poll(g),2000);return;}
+say(LABEL[j.mode]||'',true);setTimeout(()=>poll(g),300);return;}
+if(j.status==='DONE'){render(j);say('받아 적기 끝 — 대본과 비교하는 중',true);
+if(audio&&!audio.paused&&!audio.ended){audio.addEventListener('ended',reload,{once:true});setTimeout(reload,Math.max(0,(audio.duration||0)-audio.currentTime)*1000+1500);}else{reload();}return;}
+if(j.status==='ERROR'){say('듣기 중단 — '+(j.error||''),false);if(audio)audio.pause();enable(true);return;}
+enable(true);}
+btns.forEach(b=>b.addEventListener('click',async()=>{const mode=b.dataset.listen;const g=++gen;enable(false);heard.textContent='';
+endedAt=0;lastSig='';lastChange=Date.now();gaveUp=false;
+say(mode==='live'?'STT에 연결하는 중':'저장된 전사를 여는 중',true);
+if(audio){try{audio.currentTime=0;}catch(e){}const p=audio.play();if(p&&p.catch)p.catch(()=>say('브라우저가 자동 재생을 막았습니다 — 플레이어의 ▶를 눌러 주세요',false));}
+let r,j;try{r=await fetch('/collect/'+SID+'/listen?mode='+mode,{method:'POST'});j=await r.json();}catch(e){r={ok:false};j={error:{message_ko:'서버에 연결하지 못했습니다'}};}
+if(!r.ok){say((j.error&&j.error.message_ko)||'시작하지 못했습니다',false);if(audio)audio.pause();enable(true);return;}
+say(LABEL[mode],true);poll(g);}));
+if(RUNNING){enable(false);poll(gen);}
+})();
+</script>"""
+
+
+def collect_script_page(state: dict, contract: dict, sid: str, banner: str = "") -> str:
+    from . import collect, stt
+    from .sense import tally
+    s = collect.get(sid, contract)
+    sid = s["script_id"]
+    a = collect.audio(s)
+    notes = load_notes()
+    done = collect.collected(notes).get(sid)
+    live = collect.live_read(sid)
+    live = live if (live and a and live.get("audio_sha256") == a["audio_sha256"]) else None
+    running = bool(live and live["status"] == "RUNNING")
+    heard = live if (live and live["status"] == "DONE" and live.get("rec")) else None
+    stt_err = collect.stt_problem()
+    saved = collect.saved_transcript(s) if a and not stt_err else None
+    key = collect.can_call_models()
+    labels = _listen_labels()
+    it = s["intent"]
+    thr = contract["threshold"]
+    cur = next((r for r in tally(state) if (r["segment"], r["signal_type"]) == (it["segment"], it["signal_type"])), {"mentions": 0, "hcps": 0})
+    extracted = bool(done and any(c["doc_id"] == done["doc_id"] for c in state["claims"] + state["safety_queue"]))
+    heard_cer = stt.cer(heard["text"], s["text"]) if heard else (done["stt"].get("cer") if done else None)
+    gh = collect.blob_url(sid)
+
+    # journey — the five steps of this stage, same strip as a hypothesis's journey
+    derived = [h["id"] for h in state["hypotheses"] if done and any(c.startswith(f'CLM-{done["doc_id"]}-') for c in h["field"]["claim_ids"])]
+    steps = [
+        ("① 대본 · GitHub", f'{sid} · {s["chars"]}자', "저장소 data/field_scripts", "done"),
+        ("② 음성 · TTS", f'{a["duration_s"]:.1f}초 · {a["tts"]["chunks"]}조각' if a else "없음", "Chatterbox Multilingual", "done" if a else ("next" if key else "later")),
+        ("③ 듣기 · 받아 적기 · STT", f"CER {round(heard_cer * 100, 1):.1f}%" if heard_cer is not None else ("듣는 중" if running else "대기"),
+         "Parakeet · 스트리밍", "done" if (heard or done) else ("next" if a and not stt_err else "later")),
+        ("④ 면담 기록 · 동의", done["doc_id"] if done else ("동의 확인" if heard else "대기"), (done["stt"]["consent_by"] if done else ("사람 차례" if heard else "")),
+         "done" if done else ("human" if heard else "later")),
+        ("⑤ 추출 → 가설", (", ".join(derived) if derived else "발언 카드 반영") if extracted else "대기", "① 추출 (기존 단계)" if done else "",
+         "done" if extracted else ("next" if done else "later")),
+    ]
+    strip = ('<div class="strip j c5">' + "".join(f'<div class="{c}"><div class="k">{esc(k)}</div><b>{esc(v)}</b><div class="s">{esc(w)}</div></div>'
+                                                   for k, v, w, c in steps) + "</div>")
+    head = (f'<div class="eyebrow">Collect · {esc(sid)} · <a href="/collect">대본 목록</a></div><h1>{esc(s["title_ko"])}</h1>'
+            f'<div class="sub">{esc(s["hcp_ref"])} · {esc(s["specialty"])} · {esc(s["date"])} · 합성 대본 (가상 의료진)'
+            + (f' · <a href="{esc(gh)}" target="_blank" rel="noopener">GitHub에서 보기</a>' if gh else "") + "</div>")
+
+    # audio + provenance
+    if a:
+        t = a["tts"]
+        where = "저장소에 구워 둔 음성" if a["source"] == "baked" else "이 서버에서 새로 만든 음성"
+        audio_card = (f'<div class="card"><b>② 음성 — 평가자가 듣는 파일, STT가 듣는 파일</b>'
+                      f'<audio id="player" controls preload="auto" src="/collect/{esc(sid)}/audio.mp3?v={esc(a["audio_sha256"][:8])}"></audio>'
+                      f'<div class="faint">{tag("fact")}{esc(t["model"])} · {esc(t["voice"].split(".", 1)[-1].replace(".Male", " 남성"))} · '
+                      f'{a["duration_s"]:.1f}초 · {t["chunks"]}조각 · MP3 48 kbps · sha256 <span class="mono">{esc(a["audio_sha256"][:8])}</span> · '
+                      f'만든 때 {esc((t.get("created_at") or a.get("created_at") or "")[:16].replace("T", " "))} · {where}</div></div>')
+    elif key:
+        audio_card = ('<div class="card"><div class="row"><div class="grow"><b>② 음성이 아직 없다</b> <span class="sub">Chatterbox Multilingual(ko-KR 남성 음성)이 대본을 읽어 MP3 하나로 만든다. 약 5~15초.</span></div>'
+                      + button("음성 만들기 (Chatterbox TTS)", "/run/collect/tts", {"script": sid}) + "</div></div>")
+    else:
+        audio_card = '<div class="card"><b>② 음성이 아직 없다</b> <span class="faint">— 음성을 만들려면 NVIDIA_API_KEY 가 필요하다.</span></div>'
+
+    # listen controls
+    btns = []
+    if a and key and not stt_err:
+        btns.append('<button class="btn" type="button" data-listen="live">▶ 재생하며 받아 적기</button>')
+    if a and saved:
+        btns.append(f'<button class="btn{" ghost" if key else ""}" type="button" data-listen="replay">▶ 재생하며 받아 적기 (저장된 전사)</button>')
+    if running:
+        status = f'<span class="dot"></span>{esc(labels.get(live["mode"], ""))}'
+    elif heard:
+        status = f'받아 적기 끝 — {esc(labels.get(heard["mode"], ""))}'
+    elif live and live["status"] == "ERROR":
+        status = f'이전 듣기가 중단됐다 — {esc(live.get("error") or "")}'
+    elif stt_err:
+        status = "STT 설정을 고칠 때까지 들을 수 없다 — 위의 안내를 본다."
+    elif btns:
+        status = "재생을 누르면 음성이 나오고, 같은 순간부터 STT가 같은 파일을 실제 속도로 들으며 받아 적는다. 플레이어를 멈춰도 STT는 멈추지 않는다."
+    elif a:
+        status = "저장된 전사가 없고 키도 없어 들을 수 없다."
+    else:
+        status = ""
+    listen_bar = (f'<div class="bar">{"".join(btns)}</div><div class="live" id="lstatus">{status}</div>')
+
+    # the two texts side by side
+    if heard:
+        heard_html = miss_marks(heard["text"], s["text"])
+    elif running:
+        heard_html = esc(" ".join(live.get("finals") or [])) + (f'<span class="interim caret"> {esc(live.get("interim"))}</span>' if live.get("interim") else "")
+    else:
+        heard_html = '<span class="faint">재생하며 받아 적기를 누르면 STT가 받아 적은 글이 여기에 차례로 올라온다. 회색은 아직 확정되지 않은 부분이다.</span>'
+    tts_notes = f'<div class="faint" style="margin-top:8px">{esc(s["tts_notes_ko"])}</div>' if s.get("tts_notes_ko") else ""
+    texts = ('<div class="grid" style="grid-template-columns:1fr 1fr">'
+             f'<div class="card"><b>대본 — TTS가 읽는 글</b> <span class="faint">{s["chars"]}자</span><div class="script-text" style="margin-top:6px">{esc(s["text"])}</div>{tts_notes}</div>'
+             f'<div class="card"><b>STT가 받아 적는 글</b> <span class="faint">{esc(stt.ENGINES["parakeet"]["model"])}</span>'
+             f'<div class="heard" id="heard" style="margin-top:6px">{heard_html}</div></div></div>')
+
+    result = ""
+    if heard:
+        c = round(stt.cer(heard["text"], s["text"]) * 100, 1)
+        result = (f'<div class="card">{tag("fact")}대본 대비 <b>CER {c:.1f}%</b> — 띄어쓰기·문장부호 제외, 코드 계산 · '
+                  f'음성 {heard["rec"]["duration_s"]}초 → {len(heard["text"])}자 · {esc(heard["rec"]["model"])}'
+                  f'<div class="faint" style="margin-top:4px"><mark class="miss">표시</mark>는 대본과 다르게 받아 적은 곳이다 (코드 비교). '
+                  '저장하면 이 글이 그대로 면담 기록이 된다 — 틀린 글자도 고치지 않는다. 추출 모델이 그 글에서 인용을 고르고, 코드는 그 글에서 인용을 찾는다.</div></div>')
+
+    if done:
+        d = esc(done["doc_id"])
+        gate = (f'<div class="card gate">{tag("action")}<b>수집됨 → <a href="/notes#{d}">{d}</a></b> (면담 기록에서 보기) · 동의 확인 {esc(done["stt"]["consent_by"])} · '
+                f'{esc(done["stt"].get("transcribed_at", "")[:16].replace("T", " "))}'
+                '<div class="faint" style="margin-top:4px">같은 대본은 다시 저장하지 않는다. 다시 듣는 것은 된다. '
+                + ('다음: <a href="/collect#effect">이번 수집이 바꾼 것</a>' if extracted else '다음: <a href="/collect#next">대본 목록에서 ① 추출 실행</a>') + "</div></div>")
+    elif heard:
+        gate = (f'<div class="card gate"><div class="row"><div class="grow"><b>④ 사람 차례 — 녹음 동의 확인</b> <span class="sub">녹음 동의를 확인한 사람의 이름이 있어야 면담 기록이 된다.</span>'
+                f'<div class="faint" style="margin-top:4px">{tag("fact")}저장되는 값: 의료진 {esc(s["hcp_ref"])} · {esc(s["specialty"])} · {esc(s["date"])} — 대본에 고정된 값이라 여기서 고치지 않는다. '
+                '글은 위에 STT가 받아 적은 글 그대로다.</div></div>'
+                + button("녹음 동의를 확인했습니다 — 면담 기록으로 저장", "/run/collect/save", {"script": sid}, [("consent_by", "동의 확인자 이름")], turn=True)
+                + "</div></div>")
+    else:
+        gate = ""
+
+    intent = (f'<div class="card"><b>작성 의도</b> <span class="faint">— 대본을 쓴 사람의 설계 메모. 면담 기록에도, 추출 모델에도 들어가지 않는다.</span>'
+              f'<div style="margin-top:6px">{esc(it["segment"])} × {signal(it["signal_type"])} · {tag("pattern")}지금 집계 {cur["mentions"]}회/{cur["hcps"]}인 '
+              f'<span class="faint">(문턱 {thr["min_mentions"]}회·{thr["min_hcps"]}인, 코드)</span></div><div class="sub" style="margin-top:4px">{esc(it["why_ko"])}</div></div>')
+    js = COLLECT_JS % {"sid": json.dumps(sid), "labels": json.dumps(labels, ensure_ascii=False), "running": json.dumps(running),
+                       "backstop_ms": int((stt.STALL_S + collect.WATCHDOG_S + 5) * 1000)}
+    body = head + strip + _stt_problem_card(stt_err) + audio_card + listen_bar + texts + result + gate + intent
+    return shell(f"{sid} 현장 수집", body, "/collect", banner, band=band(state), script=js)

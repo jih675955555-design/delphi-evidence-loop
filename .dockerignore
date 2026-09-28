@@ -4,3 +4,8 @@
 __pycache__
 data/llm_runs.jsonl
 console/
+data/stt_runs.jsonl
+data/stt_cache/
+data/tts_cache/
+data/tts_runs.jsonl
+data/collect_runtime/

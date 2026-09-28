@@ -1,0 +1,25 @@
+{
+ "script_id": "FS-02",
+ "text_sha256": "c51b0520bb613dc7e2a67782e50d60ce2c57906edb051af3a5d07662e058ffbb",
+ "file": "FS-02.mp3",
+ "audio_sha256": "d434489a6644d586badae6f0dfdb8fb0b10732ee57c729dedfcc4b2a4cc6648e",
+ "bytes": 116564,
+ "duration_s": 19.33,
+ "format": "mp3 · 48 kbps · mono · 24 kHz",
+ "created_at": "2026-09-28T14:16:42",
+ "tts": {
+  "model": "resembleai/chatterbox-multilingual-tts",
+  "function_id": "ddacc747-1269-4fab-bfd9-8f593dead106",
+  "voice": "Chatterbox-Multilingual.ko-KR.Male",
+  "language": "ko-KR",
+  "sample_rate": 24000,
+  "chunks": 2,
+  "chunk_chars": [
+   90,
+   75
+  ],
+  "cache_key": "164b59d255dee1792115d9695b7acdb8",
+  "wav_sha256": "dffa6f4b6f6c47b5cc20d9c9d45d6b8b180447c912b89219358435ff894ed001",
+  "created_at": "2026-09-28T14:16:42"
+ }
+}
