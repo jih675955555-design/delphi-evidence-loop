@@ -48,7 +48,7 @@ ENGINES = {
     "parakeet": {"model": "nvidia/parakeet-1.1b-rnnt-multilingual-asr", "function_id": "71203149-d3b7-4460-8231-1be2543a1fca",
                  "language": "ko-KR", "mode": "streaming", "boost": True},
     "whisper": {"model": "openai/whisper-large-v3", "function_id": "b702f636-f60c-4a3d-a6f4-f3568c13bd7d",
-                "language": "multi", "mode": "offline", "boost": False},   # «multi» = automatic language detection
+                "language": "ko", "mode": "offline", "boost": False},   # Whisper takes ISO codes; «multi» = auto-detect
 }
 
 
@@ -212,9 +212,9 @@ def list_models(engine: str | None = None) -> dict[str, list[str]]:
     resp = asr.stub.GetRivaSpeechRecognitionConfig(riva.proto.riva_asr_pb2.RivaSpeechRecognitionConfigRequest(),
                                                   metadata=asr.auth.get_auth_metadata())
     out: dict[str, list[str]] = {}
-    for m in resp.model_config:
-        out.setdefault(m.parameters.get("language_code", "?"), []).append(
-            f'{m.model_name} ({m.parameters.get("type", "?")})')
+    for m in resp.model_config:   # a multilingual model reports all its languages in one comma-separated field
+        for lang in m.parameters.get("language_code", "?").split(","):
+            out.setdefault(lang.strip(), []).append(f'{m.model_name} ({m.parameters.get("type", "?")})')
     return dict(sorted(out.items()))
 
 

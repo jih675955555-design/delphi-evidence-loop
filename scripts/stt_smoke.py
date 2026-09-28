@@ -64,7 +64,7 @@ def main() -> int:
             want = cfg["language"]
             has = want in langs or want == "multi"
             print(f"[{'OK' if has else 'FAIL'}]   STT  {eng:<8} {cfg['model']} (function-id {cfg['function_id']}) — "
-                  f"언어 {len(langs)}개{', ko-KR 있음' if 'ko-KR' in langs else ''}: {', '.join(langs)[:200]}")
+                  f"요청 언어 {want} {'있음' if has else '없음'} · 언어 {len(langs)}개 · 모델 {sorted({m for ms in langs.values() for m in ms})}")
             ok &= has
         except Exception as e:  # noqa: BLE001 — grpc errors carry the useful part in str(e)
             print(f"[FAIL] STT  {eng:<8} {cfg['model']} → {type(e).__name__}: {str(e)[:300]}")

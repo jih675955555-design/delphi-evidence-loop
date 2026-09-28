@@ -48,7 +48,7 @@
 
 ## NVIDIA 스택
 
-- **음성 전사**: `nvidia/parakeet-1.1b-rnnt-multilingual-asr` (기본 · 25개 언어 · ko-KR · 스트리밍) — build.nvidia.com 호스팅 Riva gRPC(`grpc.nvcf.nvidia.com`). 호출은 `loop/stt.py` 한 곳. `data/contract.json`의 `stt_keyterms`(약 이름·환자군·검사명)를 단어 가중으로 넣고, 같은 음성은 해시로 캐시에서 재생한다. 비교용으로 `--engine whisper`(`openai/whisper-large-v3`, 오프라인 · 단어 가중 없음 · 60초 단위로 조용한 지점에서 나눠 보냄). build.nvidia.com의 `nemotron-asr-streaming`은 영어 전용이라 쓰지 않는다. function-id는 코드 기본값이 있어 **키만 있으면 된다**.
+- **음성 전사**: `nvidia/parakeet-1.1b-rnnt-multilingual-asr` (기본 · 25개 언어 · ko-KR · 스트리밍) — build.nvidia.com 호스팅 Riva gRPC(`grpc.nvcf.nvidia.com`). 호출은 `loop/stt.py` 한 곳. `data/contract.json`의 `stt_keyterms`(약 이름·환자군·검사명)를 단어 가중으로 넣고, 같은 음성은 해시로 캐시에서 재생한다. 비교용으로 `--engine whisper`(`openai/whisper-large-v3`, 언어 `ko` · 오프라인 · 단어 가중 없음 · 60초 단위로 조용한 지점에서 나눠 보냄). build.nvidia.com의 `nemotron-asr-streaming`은 영어 전용이라 쓰지 않는다. function-id는 코드 기본값이 있어 **키만 있으면 된다**.
 - **추론**: `nvidia/nemotron-3-ultra-550b-a55b` — NIM OpenAI 호환 API, 한국어 공식 지원. 호출은 `loop/llm.py` 한 곳. 구조화 출력(JSON schema)만 받고, 같은 입력은 캐시에서 재생한다.
 - **스킬**: `skills/evidence-loop/SKILL.md` — Agent Skills 규격. Claude Code·OpenClaw 등 호환 에이전트에 설치하면 이 루프를 도구로 쓴다.
 - **샌드박스**: `sandbox/EGRESS.md` — OpenShell/NemoClaw의 deny-by-default 정책에 넣을 허용 호스트 5개. 이 루프의 외부 통신은 그게 전부다.
@@ -120,7 +120,8 @@ uv run python scripts/report.py                     # docs/report.html 정적 �
   - 전사 출처(모델 · 해시 · 동의자)는 `stt` 칸에 남고 추출 모델에는 보내지 않는다 — 기존 12건의 캐시 키가 그대로라 키 없이 재생된다.
   - 이번 범위 밖: 실시간 스트리밍 입력(마이크), 화자 분리, 개인식별정보 자동 가림. 실제 면담 녹음을 넣으려면 가림 단계가 먼저 필요하다.
   - 실제 호출 점검: `uv run python scripts/stt_smoke.py` (키 · LLM · 엔진별 서비스 언어) · `--audio 녹음.m4a --ref-note FN-…` 로 두 엔진 전사와 글자 오류율(CER) 비교.
-  - 한국어 의료 대화 정확도는 아직 실측하지 않았다. `data/stt_cache/`는 개인정보라 커밋하지 않는다(`.gitignore`).
+  - 2026-09-28 실호출 확인: 키 하나로 두 엔진 모두 응답, parakeet은 ko-KR(스트리밍·오프라인 모델 둘 다), Whisper는 `ko` 서비스. 사람 음성(Riva 예제)은 parakeet이 정확히 받아 적었고, espeak-ng 기계음은 parakeet의 음성 구간 검출(VAD)이 말소리로 보지 않아 빈 결과 — 합성 음성으로 시험하려면 자연스러운 TTS가 필요하다. Whisper는 기계음도 받아 적지만 CER 44~76%.
+  - 한국어 의료 대화 정확도(사람 녹음)는 아직 실측하지 않았다. `data/stt_cache/`는 개인정보라 커밋하지 않는다(`.gitignore`).
 - OpenShell 안에서 실행해 보지 않았다 (개발 환경이 macOS). 정책은 `sandbox/EGRESS.md`.
 - `data/state.json` 하나가 정본이라 **명령은 한 번에 하나씩** 돌린다. 동시에 돌리면 나중 저장이 앞 저장을 덮는다.
 - 모델 호출 1회 ≈ 20~60초(Nemotron 3 Ultra, 무료 엔드포인트). 한 바퀴 약 27회. 같은 입력은 캐시에서 즉시 재생된다.
