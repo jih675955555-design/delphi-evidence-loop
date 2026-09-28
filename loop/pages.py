@@ -208,6 +208,23 @@ def overview(state: dict, contract: dict, banner: str = "", web: bool = True) ->
     return shell("개요", "\n".join(body), "/console", banner)
 
 
+def origin(n: dict) -> str:
+    """Where a note's text came from — typed synthetic text, or a recording through the STT model."""
+    t = n.get("stt")
+    return f'<span class="chip st">음성 전사 · {esc(t["model"])} · {t["duration_s"]}초</span>' if t else "합성"
+
+
+UPLOAD_FORM = (
+    '<form method="post" action="/run/transcribe" enctype="multipart/form-data" class="card">'
+    '<b>면담 음성 올리기</b> — Nemotron ASR 이 한국어로 전사해 면담 기록 한 건으로 넣는다. 음성 파일은 저장하지 않고 해시만 남긴다.<br>'
+    '<input type="file" name="audio" accept="audio/*,.wav,.m4a,.mp3,.ogg,.opus,.flac" required> '
+    '<input type="text" name="hcp" placeholder="의료진 (예: HCP-13)" required> '
+    '<input type="text" name="specialty" placeholder="전문과 · 기관" required> '
+    '<input type="date" name="date" required> '
+    '<input type="text" name="consent_by" placeholder="녹음 동의 확인자 이름" required> '
+    '<button class="btn">전사해서 넣기</button></form>')
+
+
 def note_cards(state: dict, notes: list[dict], web: bool = True) -> str:
     """Each field note with its verified claims highlighted in place — the evidence pointer made visible."""
     by_doc: dict[str, list] = {}
@@ -223,17 +240,18 @@ def note_cards(state: dict, notes: list[dict], web: bool = True) -> str:
         k = len([1 for c, cls in by_doc.get(n["doc_id"], []) if cls != "ae"])
         ae = len([1 for c, cls in by_doc.get(n["doc_id"], []) if cls == "ae"])
         tally = (f'<span class="chip st">발언 카드 {k}</span>' if k else "") + (f'<span class="chip oppose">유해사례 후보 {ae}</span>' if ae else "")
-        out.append(f'<div class="note" id="{esc(n["doc_id"])}"><div class="meta"><span class="mono">{esc(n["doc_id"])}</span> · {esc(n["hcp_ref"])} · {esc(n["specialty"])} · {esc(n["date"])} · 합성 {tally}</div>'
+        out.append(f'<div class="note" id="{esc(n["doc_id"])}"><div class="meta"><span class="mono">{esc(n["doc_id"])}</span> · {esc(n["hcp_ref"])} · {esc(n["specialty"])} · {esc(n["date"])} · {origin(n)} {tally}</div>'
                    f'{highlight(n["text"], spans)}</div>')
     return "".join(out)
 
 
 def notes_page(state: dict, contract: dict, banner: str = "", web: bool = True) -> str:
     notes = load_notes()
+    syn = [n for n in notes if not n.get("stt")]
     body = ['<div class="eyebrow">Input</div><h1>면담 기록</h1>',
-            f'<p class="sub">{tag("fact")}이 루프의 입력. 의학부 담당자가 의료진을 만나고 남기는 기록을 본떠 <b>합성</b>한 {len(notes)}건이다(가상 의료진 {len(notes)}인, 실제 인물·기관·발언 없음). '
+            f'<p class="sub">{tag("fact")}이 루프의 입력. 의학부 담당자가 의료진을 만나고 남기는 기록을 본떠 <b>합성</b>한 {len(syn)}건이다(가상 의료진 {len({n["hcp_ref"] for n in syn})}인, 실제 인물·기관·발언 없음){f" · 음성 전사 {len(notes) - len(syn)}건" if len(syn) < len(notes) else ""}. '
             f'약은 {esc(contract["drug_ko"])}. 추출을 실행하면 모델이 고른 발언이 <mark>원문 위에 표시</mark>되고, 유해사례로 읽힌 발언은 <mark class="ae">따로 표시</mark>된다 — 표시된 자리가 곧 코드가 검증한 원문 위치다.</p>',
-            note_cards(state, notes, web)]
+            UPLOAD_FORM if web else "", note_cards(state, notes, web)]
     return shell("면담 기록", "\n".join(body), "/notes", banner, band=band(state))
 
 

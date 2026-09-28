@@ -53,7 +53,10 @@ def run(state: dict, contract: dict, notes: list[dict], force: bool = False, wor
     todo = [n for n in notes if force or n["doc_id"] not in done]
 
     def extract(note):
-        return call_structured("sense", system=system, user=json.dumps(note, ensure_ascii=False),
+        # the transcription record (audio hash, consent) is provenance, not interview content — the model never sees it.
+        # Notes without it serialise exactly as before, so their cached outputs still replay.
+        seen = {k: v for k, v in note.items() if k != "stt"}
+        return call_structured("sense", system=system, user=json.dumps(seen, ensure_ascii=False),
                                schema_name="sense_claims_v1", schema=SENSE_SCHEMA, force=force)
 
     with ThreadPoolExecutor(max_workers=workers) as pool:

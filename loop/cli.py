@@ -1,4 +1,4 @@
-"""CLI — the whole loop in six commands. Every screen line is tagged with one of five levels:
+"""CLI — the whole loop in six commands, plus the audio entrance (transcribe). Every screen line is tagged with one of five levels:
 [사실] 관찰된 사실 · [패턴] 통계적 패턴 · [해석] AI의 해석 · [제안] 전략적 제안 · [실행] 승인된 실행
 """
 from __future__ import annotations
@@ -6,9 +6,28 @@ from __future__ import annotations
 import argparse
 import json
 
-from . import board, screen, sense, store
+from . import board, screen, sense, store, stt
 
 STANCE_KO = {"SUPPORTS": "지지", "CONTRADICTS": "반대", "NEUTRAL": "중립"}
+
+
+def cmd_transcribe(args):
+    from pathlib import Path
+    rec = stt.transcribe(Path(args.audio), store.contract(), force=args.force)
+    print(f"[사실] {args.audio} {rec['duration_s']}초 → {len(rec['text'])}자 · {rec['model']} ({rec['language']}, {rec['mode']}) · "
+          f"도메인 용어 {len(rec['keyterms'])}개 가중")
+    print(f"        “{rec['text'][:300]}{'…' if len(rec['text']) > 300 else ''}”")
+    if args.no_save:
+        print("[사실] --no-save: 면담 기록에 넣지 않았습니다")
+        return
+    note = stt.add_note(rec, hcp_ref=args.hcp, specialty=args.specialty, date=args.date, consent_by=args.consent_by,
+                        audio_name=Path(args.audio).name)
+    print(f"[실행] {note['doc_id']} 로 면담 기록에 추가 (녹음 동의 확인: {note['stt']['consent_by']}) — 다음: `sense`")
+
+
+def cmd_stt_models(args):
+    for lang, models in stt.list_models().items():
+        print(f"[사실] {lang:<8} {', '.join(models)}")
 
 
 def cmd_sense(args):
@@ -96,6 +115,11 @@ def cmd_status(args):
 def main():
     p = argparse.ArgumentParser(prog="loop", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("transcribe", help="면담 음성 → 전사 → 면담 기록 (Nemotron ASR)"); s.add_argument("audio")
+    s.add_argument("--hcp", required=True); s.add_argument("--specialty", required=True); s.add_argument("--date", required=True)
+    s.add_argument("--consent-by", required=True, help="녹음 동의를 확인한 사람"); s.add_argument("--force", action="store_true")
+    s.add_argument("--no-save", action="store_true", help="전사만 보고 면담 기록에는 넣지 않는다"); s.set_defaults(fn=cmd_transcribe)
+    sub.add_parser("stt-models", help="STT 함수가 서비스하는 언어·모델 (ko-KR 확인)").set_defaults(fn=cmd_stt_models)
     s = sub.add_parser("sense", help="면담 기록 → 구조화 → 가설 초안"); s.add_argument("--force", action="store_true")
     s.add_argument("--min-mentions", type=int, default=None); s.add_argument("--min-hcps", type=int, default=None); s.set_defaults(fn=cmd_sense)
     sub.add_parser("hypotheses", help="가설 목록").set_defaults(fn=cmd_hypotheses)

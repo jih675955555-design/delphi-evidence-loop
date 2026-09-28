@@ -12,12 +12,12 @@ import threading
 import traceback
 from pathlib import Path
 
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import board, compat, intro, live, pages, runner, screen, sense, store
+from . import board, compat, intro, live, pages, runner, screen, sense, store, stt
 
 app = FastAPI(title="DELPHi — Evidence Loop")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -134,6 +134,25 @@ def run_sense():
         return (f"면담 {st['docs']}건 · 인용 검증 통과 {st['kept']} · 버림 {st['dropped']} · 유해사례 후보 {st['adverse_events']}"
                 f" → 새 가설 {len(created)}개")
     return _do("① 추출", go)
+
+
+@app.post("/run/transcribe")
+def run_transcribe(audio: UploadFile = File(...), hcp: str = Form(...), specialty: str = Form(...), date: str = Form(...),
+                   consent_by: str = Form(...)):
+    """Interview audio → transcript → field note. The recording itself is not kept — only its hash."""
+    import tempfile
+
+    def go():
+        suffix = Path(audio.filename or "audio.wav").suffix or ".wav"
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / f"upload{suffix}"
+            src.write_bytes(audio.file.read())
+            rec = stt.transcribe(src, store.contract())
+        note = stt.add_note(rec, hcp_ref=hcp, specialty=specialty, date=date, consent_by=consent_by,
+                            audio_name=audio.filename or src.name)
+        return (f"{note['doc_id']} — {rec['duration_s']}초 → {len(rec['text'])}자 ({rec['model']}) · 동의 확인 {note['stt']['consent_by']}"
+                " → 개요에서 추출을 실행하면 이 면담도 집계된다")
+    return _do("⓪ 음성 전사", go, "/notes")
 
 
 @app.post("/run/screen")

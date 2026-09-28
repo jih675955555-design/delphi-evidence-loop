@@ -12,7 +12,7 @@
 ## 처리 순서
 
 ```
-면담 기록(한국어)  ──sense──▶  발언 카드(원문 위치 필수)  ──코드 집계──▶  임계값 넘은 (환자군 × 신호) → 가설 DRAFT
+면담 기록(한국어 · 음성은 transcribe)  ──sense──▶  발언 카드(원문 위치 필수)  ──코드 집계──▶  임계값 넘은 (환자군 × 신호) → 가설 DRAFT
                                                                                    │
   다음 면담 체크리스트 ◀──approve(사람)── AI Board(간사+임원 7 · 약 20턴) ◀──board── 서명(사람) ◀──review── screen ◀┘
                                           입장 집계·인용 검증 = 코드                                4 공개 근거원 · 인용 검증 · 코드 집계
@@ -48,6 +48,7 @@
 
 ## NVIDIA 스택
 
+- **음성 전사**: Nemotron 3.5 ASR (0.6B, 40개 언어 · 한국어 포함) — build.nvidia.com 호스팅 Riva gRPC(`grpc.nvcf.nvidia.com`). 호출은 `loop/stt.py` 한 곳. `data/contract.json`의 `stt_keyterms`(약 이름·환자군·검사명)를 단어 가중으로 넣고, 같은 음성은 해시로 캐시에서 재생한다.
 - **추론**: `nvidia/nemotron-3-ultra-550b-a55b` — NIM OpenAI 호환 API, 한국어 공식 지원. 호출은 `loop/llm.py` 한 곳. 구조화 출력(JSON schema)만 받고, 같은 입력은 캐시에서 재생한다.
 - **스킬**: `skills/evidence-loop/SKILL.md` — Agent Skills 규격. Claude Code·OpenClaw 등 호환 에이전트에 설치하면 이 루프를 도구로 쓴다.
 - **샌드박스**: `sandbox/EGRESS.md` — OpenShell/NemoClaw의 deny-by-default 정책에 넣을 허용 호스트 5개. 이 루프의 외부 통신은 그게 전부다.
@@ -77,6 +78,9 @@ cp .env.example .env            # build.nvidia.com 에서 발급한 nvapi- 키 (
 uv run uvicorn loop.web:app --port 8030      # http://localhost:8030
 
 # 같은 것을 CLI로
+uv run python -m loop.cli stt-models                # STT 함수가 ko-KR 을 서비스하는지 확인 (.env 에 STT_FUNCTION_ID)
+uv run python -m loop.cli transcribe 면담.m4a --hcp HCP-13 --specialty "산부인과 · 개원의" \
+       --date 2026-09-28 --consent-by 이름            # 음성 → 전사 → data/field_notes.json 에 한 건 추가 (--no-save: 전사만 보기)
 uv run python -m loop.cli sense                     # 면담 12건 → 발언 카드 → 가설
 uv run python -m loop.cli screen HYP-001            # 공개 근거 교차검증
 uv run python -m loop.cli review HYP-001 --by 이름   # 관문 ①
@@ -111,7 +115,11 @@ uv run python scripts/report.py                     # docs/report.html 정적 �
 근거 읽기는 **RCT·3상·메타분석을 먼저** 읽는다(`screen.gather`). 관련도순 상위만 읽으면 가장 큰 시험이 밀린다 — MA.32가 처음엔 안 잡혔던 이유.
 
 ## 안 만든 것 · 한계
-- 현장 수집 모바일 앱·음성 전사는 이 저장소에 없다 (`data/field_notes.json`이 그 출력이라고 가정).
+- 현장 수집 모바일 앱은 이 저장소에 없다. **음성 전사는 있다** — `transcribe` 명령과 면담 기록 페이지(`/notes`)의 업로드가 녹음 파일을 Nemotron 3.5 ASR로 전사해 `data/field_notes.json`에 넣는다. 데모의 12건은 여전히 합성 텍스트다.
+  - 녹음 동의를 확인한 사람의 이름이 없으면 기록이 되지 않는다(`stt.add_note`). 같은 녹음은 두 번 들어가지 않는다(해시). 음성 파일은 저장하지 않는다.
+  - 전사 출처(모델 · 해시 · 동의자)는 `stt` 칸에 남고 추출 모델에는 보내지 않는다 — 기존 12건의 캐시 키가 그대로라 키 없이 재생된다.
+  - 이번 범위 밖: 실시간 스트리밍 입력(마이크), 화자 분리, 개인식별정보 자동 가림. 실제 면담 녹음을 넣으려면 가림 단계가 먼저 필요하다.
+  - 한국어 의료 대화 정확도는 아직 실측하지 않았다. `data/stt_cache/`는 개인정보라 커밋하지 않는다(`.gitignore`).
 - OpenShell 안에서 실행해 보지 않았다 (개발 환경이 macOS). 정책은 `sandbox/EGRESS.md`.
 - `data/state.json` 하나가 정본이라 **명령은 한 번에 하나씩** 돌린다. 동시에 돌리면 나중 저장이 앞 저장을 덮는다.
 - 모델 호출 1회 ≈ 20~60초(Nemotron 3 Ultra, 무료 엔드포인트). 한 바퀴 약 27회. 같은 입력은 캐시에서 즉시 재생된다.

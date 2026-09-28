@@ -7,6 +7,7 @@ description: Screen a drug hypothesis (off-label demand, off-label use, repurpos
 
 An agent skill for the Agent Skills spec (works in Claude Code, OpenClaw and compatible clients).
 Runtime model: NVIDIA Nemotron 3 Ultra via NIM (`integrate.api.nvidia.com/v1`, OpenAI-compatible).
+Speech-to-text: NVIDIA Nemotron 3.5 ASR via build.nvidia.com (Riva gRPC, `grpc.nvcf.nvidia.com`).
 
 ## When to use
 - "Is there public evidence for <drug> in <patient group>?"
@@ -15,6 +16,8 @@ Runtime model: NVIDIA Nemotron 3 Ultra via NIM (`integrate.api.nvidia.com/v1`, O
 
 ## Commands (run from the repo root)
 ```
+uv run python -m loop.cli transcribe <audio> --hcp <ref> --specialty <text> --date YYYY-MM-DD --consent-by "<name>"
+                                                # interview audio → Nemotron 3.5 ASR (ko-KR) transcript → one field note
 uv run python -m loop.cli sense                 # field notes → claims (verbatim quotes verified by code) → hypotheses over threshold
 uv run python -m loop.cli hypotheses
 uv run python -m loop.cli screen HYP-001        # 3 agents (PubMed / CT.gov / label) + FAERS and Part D numbers
@@ -37,3 +40,4 @@ uv run python -m loop.cli approve HYP-001 --by "<name>"   # gate 2 — questions
 - `data/field_checklist.json` — open questions for the next interview
 - `data/cache/` (public API responses) and `data/llm_cache/` (model outputs) — same input, same output, replayable without a key
 - `data/llm_runs.jsonl` — every model call with purpose, model, tokens, cache hit
+- `data/stt_runs.jsonl`, `data/stt_cache/` — every transcription (audio hash, seconds, cache hit); local only, never committed

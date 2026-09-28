@@ -1,9 +1,9 @@
 """Offline self-test: fake model outputs, real sources (cached), real code paths. `uv run python scripts/selftest.py`
-Checks: quote verification drops paraphrases, tally counts only verified claims, thresholds, gate order, action items."""
+Checks: STT entrance (cache replay, consent, no duplicates, provenance hidden from the model), quote verification drops paraphrases, tally counts only verified claims, thresholds, gate order, action items."""
 import json, re, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from loop import store, sense, screen, board
+from loop import store, sense, screen, board, stt
 store.STATE = store.DATA / "state.selftest.json"
 store.FIELD_CHECKLIST = store.DATA / "field_checklist.selftest.json"
 if store.STATE.exists(): store.STATE.unlink()
@@ -83,4 +83,39 @@ assert all("PMID:0" not in tr.get("cited", []) for tr in m["transcript"]), "inva
 assert len(m["blocked_actions"]) >= 1, "commercial action on DEVELOPMENT hypothesis must be blocked"
 acts = board.approve(state, hyp, "테스터"); print("actions:", [a["id"] for a in acts], "checklist:", store.FIELD_CHECKLIST.exists())
 print("status:", store.hypothesis(state, hyp)["status"])
+
+# ── STT entrance: audio → transcript → field note → sense (the model is faked, the file handling is real) ──
+import io, tempfile, wave
+tmp = Path(tempfile.mkdtemp())
+stt.CACHE_DIR, stt.RUNS_LOG = tmp / "stt_cache", tmp / "stt_runs.jsonl"
+wav = tmp / "interview.wav"
+with wave.open(str(wav), "wb") as w:
+    w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000); w.writeframes(b"\x00\x00" * 16000 * 3)
+SAID = "PCOS 환자에게 메트포르민을 써봤는데 배란이 돌아온 경우가 있었다. 허가 범위 밖이라 설명이 조심스럽다."
+calls = []
+def fake_recognize(pcm, rate, terms, cfg):
+    calls.append((len(pcm), rate, terms)); return SAID, [{"word": "PCOS", "start_ms": 0, "end_ms": 400, "confidence": 0.9}]
+stt._recognize = fake_recognize
+rec = stt.transcribe(wav, contract)
+assert rec["text"] == SAID and rec["duration_s"] == 3.0 and len(calls) == 1 and calls[0][1] == 16000
+assert "메트포르민" in calls[0][2] and "PCOS 여성" in calls[0][2], "contract vocabulary must be boosted"
+assert stt.transcribe(wav, contract) == rec and len(calls) == 1, "same audio must replay from cache"
+notes_tmp = tmp / "field_notes.json"; notes_tmp.write_text(store.FIELD_NOTES.read_text())
+try: stt.add_note(rec, hcp_ref="HCP-13", specialty="산부인과", date="2026-07-02", consent_by=" ", audio_name="a.wav", notes_path=notes_tmp); raise AssertionError("note without consent")
+except SystemExit as e: print("consent gate ok:", e)
+note = stt.add_note(rec, hcp_ref="HCP-13", specialty="산부인과", date="2026-07-02", consent_by="테스터", audio_name="a.wav", notes_path=notes_tmp)
+assert note["doc_id"] == "FN-2026-0702-02", note["doc_id"]   # FN-2026-0702-01 already exists
+try: stt.add_note(rec, hcp_ref="HCP-13", specialty="산부인과", date="2026-07-02", consent_by="테스터", audio_name="a.wav", notes_path=notes_tmp); raise AssertionError("same audio added twice")
+except SystemExit as e: print("duplicate gate ok:", e)
+all_notes = json.loads(notes_tmp.read_text())
+assert all_notes[:-1] == notes and all_notes[-1] == note, "existing notes must be untouched"
+assert notes_tmp.read_text().startswith(store.FIELD_NOTES.read_text().rstrip()[:-1].rstrip()), "hand formatting must be kept"
+seen_users = []
+def fake_sense(purpose, *, user, **kw):
+    seen_users.append(user); return {"claims": [{"segment": "PCOS 여성", "signal_type": "OFF_LABEL_USE", "quote": SAID.split(". ")[0] + ".", "is_adverse_event": False, "note_ko": "테스트"}]}
+sense.call_structured = fake_sense
+st2 = sense.run(json.loads(json.dumps(store.EMPTY)), contract, [note])
+assert st2 == {"docs": 1, "kept": 1, "dropped": 0, "adverse_events": 0}, st2
+assert '"stt"' not in seen_users[0] and "audio_sha256" not in seen_users[0], "provenance must not reach the model"
+print("stt:", note["doc_id"], rec["duration_s"], "s ·", len(rec["keyterms"]), "keyterms · sense on transcript", st2)
 print("SELFTEST OK")

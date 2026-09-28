@@ -7,3 +7,6 @@ data/llm_runs.jsonl
 data/*.selftest.json
 ~$*
 data/board_live/
+data/stt_runs.jsonl
+# 실제 녹음의 전사는 개인정보다 — 캐시는 로컬에만 둔다
+data/stt_cache/

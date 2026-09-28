@@ -1,17 +1,19 @@
 # Network egress this loop needs — for a deny-by-default sandbox (NVIDIA OpenShell / NemoClaw)
 
-The agent must reach exactly five hosts. Everything else stays closed. Enter these into the sandbox's
-network policy; the loop has no other outbound calls (verified: `grep -rn "https://" loop/`).
+The agent must reach exactly six hosts. Everything else stays closed. Enter these into the sandbox's
+network policy; the loop has no other outbound calls (verified: `grep -rn "https://" loop/`; the STT host is in `loop/stt.py`).
 
 | Host | Purpose | Method | Auth |
 |---|---|---|---|
 | `integrate.api.nvidia.com` | Nemotron inference (NIM, OpenAI-compatible) | POST `/v1/chat/completions` | `NVIDIA_API_KEY` — kept on the host, injected as env, never written to cache or logs |
+| `grpc.nvcf.nvidia.com` | Nemotron 3.5 ASR — interview audio → transcript (Riva gRPC, port 443) | gRPC `StreamingRecognize` | `NVIDIA_API_KEY` + `STT_FUNCTION_ID` as gRPC metadata — same rules as above |
 | `eutils.ncbi.nlm.nih.gov` | PubMed E-utilities (esearch, efetch) | GET | none |
 | `clinicaltrials.gov` | ClinicalTrials.gov API v2 | GET `/api/v2/studies` | none |
 | `api.fda.gov` | openFDA drug label + FAERS events | GET | none |
 | `data.cms.gov` | Medicare Part D spending by drug | GET `/data-api/v1/dataset/…/data` | none |
 
-Filesystem: read `data/contract.json`, `data/field_notes.json`, `loop/prompts/`; write only under `data/`.
+Filesystem: read `data/contract.json`, `data/field_notes.json`, `loop/prompts/`; write only under `data/`
+(`transcribe` appends to `data/field_notes.json`; the uploaded recording goes to a temp dir and is deleted, only its hash is kept).
 
 Why this matters for this loop specifically: the agent reads field notes (sensitive in a real deployment),
 receives text from the open web (untrusted), and can write. That is the combination a sandbox cannot fix
