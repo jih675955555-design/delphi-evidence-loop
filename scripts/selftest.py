@@ -117,5 +117,9 @@ sense.call_structured = fake_sense
 st2 = sense.run(json.loads(json.dumps(store.EMPTY)), contract, [note])
 assert st2 == {"docs": 1, "kept": 1, "dropped": 0, "adverse_events": 0}, st2
 assert '"stt"' not in seen_users[0] and "audio_sha256" not in seen_users[0], "provenance must not reach the model"
+assert stt.settings("whisper")["boost"] == 0 and stt.settings("parakeet")["language"] == "ko-KR"
+pcm = (b"\x10\x00" * 16000 * 7 + b"\x00\x00" * 16000) * 16          # 128 s: 7 s sound, 1 s silence
+segs = stt._segments(pcm, 16000)
+assert b"".join(segs) == pcm and all(len(s) <= 60 * 32000 for s in segs), "offline segments must be lossless and ≤ 60 s"
 print("stt:", note["doc_id"], rec["duration_s"], "s ·", len(rec["keyterms"]), "keyterms · sense on transcript", st2)
 print("SELFTEST OK")

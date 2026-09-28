@@ -6,7 +6,7 @@ network policy; the loop has no other outbound calls (verified: `grep -rn "https
 | Host | Purpose | Method | Auth |
 |---|---|---|---|
 | `integrate.api.nvidia.com` | Nemotron inference (NIM, OpenAI-compatible) | POST `/v1/chat/completions` | `NVIDIA_API_KEY` — kept on the host, injected as env, never written to cache or logs |
-| `grpc.nvcf.nvidia.com` | Nemotron 3.5 ASR — interview audio → transcript (Riva gRPC, port 443) | gRPC `StreamingRecognize` | `NVIDIA_API_KEY` + `STT_FUNCTION_ID` as gRPC metadata — same rules as above |
+| `grpc.nvcf.nvidia.com` | Speech-to-text — interview audio → transcript (Riva gRPC over HTTP/2, port 443; Parakeet 1.1B multilingual or Whisper Large v3) | gRPC `StreamingRecognize` / `Recognize` | `NVIDIA_API_KEY` + NVCF `function-id` as gRPC metadata — same rules as above. The proxy must let HTTP/2 through its tunnel |
 | `eutils.ncbi.nlm.nih.gov` | PubMed E-utilities (esearch, efetch) | GET | none |
 | `clinicaltrials.gov` | ClinicalTrials.gov API v2 | GET `/api/v2/studies` | none |
 | `api.fda.gov` | openFDA drug label + FAERS events | GET | none |

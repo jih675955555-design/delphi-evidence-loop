@@ -138,7 +138,7 @@ def run_sense():
 
 @app.post("/run/transcribe")
 def run_transcribe(audio: UploadFile = File(...), hcp: str = Form(...), specialty: str = Form(...), date: str = Form(...),
-                   consent_by: str = Form(...)):
+                   consent_by: str = Form(...), engine: str = Form("parakeet")):
     """Interview audio → transcript → field note. The recording itself is not kept — only its hash."""
     import tempfile
 
@@ -147,7 +147,7 @@ def run_transcribe(audio: UploadFile = File(...), hcp: str = Form(...), specialt
         with tempfile.TemporaryDirectory() as tmp:
             src = Path(tmp) / f"upload{suffix}"
             src.write_bytes(audio.file.read())
-            rec = stt.transcribe(src, store.contract())
+            rec = stt.transcribe(src, store.contract(), engine=engine)
         note = stt.add_note(rec, hcp_ref=hcp, specialty=specialty, date=date, consent_by=consent_by,
                             audio_name=audio.filename or src.name)
         return (f"{note['doc_id']} — {rec['duration_s']}초 → {len(rec['text'])}자 ({rec['model']}) · 동의 확인 {note['stt']['consent_by']}"

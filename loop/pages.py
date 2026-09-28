@@ -216,12 +216,14 @@ def origin(n: dict) -> str:
 
 UPLOAD_FORM = (
     '<form method="post" action="/run/transcribe" enctype="multipart/form-data" class="card">'
-    '<b>면담 음성 올리기</b> — Nemotron ASR 이 한국어로 전사해 면담 기록 한 건으로 넣는다. 음성 파일은 저장하지 않고 해시만 남긴다.<br>'
+    '<b>면담 음성 올리기</b> — NVIDIA 호스팅 ASR 이 한국어로 전사해 면담 기록 한 건으로 넣는다. 음성 파일은 저장하지 않고 해시만 남긴다.<br>'
     '<input type="file" name="audio" accept="audio/*,.wav,.m4a,.mp3,.ogg,.opus,.flac" required> '
     '<input type="text" name="hcp" placeholder="의료진 (예: HCP-13)" required> '
     '<input type="text" name="specialty" placeholder="전문과 · 기관" required> '
     '<input type="date" name="date" required> '
     '<input type="text" name="consent_by" placeholder="녹음 동의 확인자 이름" required> '
+    '<select name="engine"><option value="parakeet">Parakeet 1.1B 다국어 (NVIDIA · 용어 가중)</option>'
+    '<option value="whisper">Whisper Large v3 (OpenAI)</option></select> '
     '<button class="btn">전사해서 넣기</button></form>')
 
 

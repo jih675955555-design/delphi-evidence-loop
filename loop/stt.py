@@ -1,4 +1,4 @@
-"""The single wrapper every speech-to-text call goes through — NVIDIA Nemotron 3.5 ASR on build.nvidia.com.
+"""The single wrapper every speech-to-text call goes through — NVIDIA-hosted ASR on build.nvidia.com.
 
 This is the entrance the loop did not have: interview audio → transcript → one entry in data/field_notes.json.
 From there `sense` reads it exactly like the synthetic notes, so the rule «every quote has a position in the
@@ -10,9 +10,16 @@ Same rules as llm.py:
 2. The key never leaves the host: NVIDIA_API_KEY from .env, never written to logs or cache.
 3. An empty transcript is an error, never a cached result.
 
-The hosted endpoint is Riva gRPC on NVCF (grpc.nvcf.nvidia.com:443). Which model answers is decided by the
-function id — copy it from the model's API tab on build.nvidia.com into STT_FUNCTION_ID.
-`uv run python -m loop.cli stt-models` lists the languages the function actually serves (look for ko-KR).
+Two engines, both Riva gRPC on NVCF (grpc.nvcf.nvidia.com:443), chosen with STT_ENGINE or `--engine`:
+- parakeet (default) — nvidia/parakeet-1.1b-rnnt-multilingual-asr. NVIDIA's own model, 25 languages incl. ko-KR,
+  streaming, word boosting with the contract's vocabulary.
+- whisper — openai/whisper-large-v3. Strong Korean, but offline only, no word boosting, and known to invent text
+  over silence; long audio is cut at quiet points into ≤ 60 s requests.
+build.nvidia.com's nemotron-asr-streaming is English-only, so it is not an option for Korean interviews.
+
+Which model answers is decided by the NVCF function id. The defaults below are the public hosted deployments;
+NVIDIA changes an id when it redeploys a model, so STT_FUNCTION_ID_PARAKEET / STT_FUNCTION_ID_WHISPER override them.
+`uv run python -m loop.cli stt-models` lists what the function actually serves (look for ko-KR).
 """
 from __future__ import annotations
 
@@ -25,6 +32,7 @@ import shutil
 import subprocess
 import time
 import wave
+from array import array
 from pathlib import Path
 
 from . import store
@@ -33,22 +41,34 @@ from .llm import api_key, load_env
 ROOT = Path(__file__).resolve().parents[1]
 CACHE_DIR = ROOT / "data" / "stt_cache"
 RUNS_LOG = ROOT / "data" / "stt_runs.jsonl"
-CHUNK_SECONDS = 0.2   # streaming chunk size; the model decodes at 80 ms–1 s latency
+CHUNK_SECONDS = 0.2     # streaming chunk size
+SEGMENT_SECONDS = 60    # offline requests stay well under gRPC's 4 MB message limit (60 s of 16 kHz PCM ≈ 1.9 MB)
+
+ENGINES = {
+    "parakeet": {"model": "nvidia/parakeet-1.1b-rnnt-multilingual-asr", "function_id": "71203149-d3b7-4460-8231-1be2543a1fca",
+                 "language": "ko-KR", "mode": "streaming", "boost": True},
+    "whisper": {"model": "openai/whisper-large-v3", "function_id": "b702f636-f60c-4a3d-a6f4-f3568c13bd7d",
+                "language": "multi", "mode": "offline", "boost": False},   # «multi» = automatic language detection
+}
 
 
 class SttUnavailable(RuntimeError):
     pass
 
 
-def settings() -> dict:
+def settings(engine: str | None = None) -> dict:
     load_env()
+    engine = (engine or os.environ.get("STT_ENGINE", "parakeet")).lower()
+    if engine not in ENGINES:
+        raise SttUnavailable(f"STT 엔진은 {', '.join(ENGINES)} 중 하나입니다: {engine!r}")
+    e = ENGINES[engine]
     return {
+        "engine": engine, "model": e["model"],
         "server": os.environ.get("STT_SERVER", "grpc.nvcf.nvidia.com:443"),
-        "function_id": os.environ.get("STT_FUNCTION_ID", ""),
-        "model": os.environ.get("STT_MODEL", "nvidia/nemotron-3.5-asr-streaming"),   # record label; the function id picks the model
-        "language": os.environ.get("STT_LANGUAGE", "ko-KR"),
-        "mode": os.environ.get("STT_MODE", "streaming"),   # streaming | offline — Nemotron ASR Streaming serves streaming
-        "boost": float(os.environ.get("STT_BOOST", "20")),
+        "function_id": os.environ.get(f"STT_FUNCTION_ID_{engine.upper()}", e["function_id"]),
+        "language": os.environ.get("STT_LANGUAGE", e["language"]),
+        "mode": e["mode"],
+        "boost": float(os.environ.get("STT_BOOST", "20")) if e["boost"] else 0.0,
     }
 
 
@@ -94,12 +114,12 @@ def _log(**rec) -> None:
         f.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), **rec}, ensure_ascii=False) + "\n")
 
 
-def transcribe(src: Path, contract: dict, force: bool = False) -> dict:
+def transcribe(src: Path, contract: dict, force: bool = False, engine: str | None = None) -> dict:
     """Transcript record for one recording, from cache if this exact audio was transcribed before with the
     same model, language and vocabulary."""
-    cfg = settings()
+    cfg = settings(engine)
     audio_sha = hashlib.sha256(src.read_bytes()).hexdigest()
-    terms = keyterms(contract)
+    terms = keyterms(contract) if cfg["boost"] else []
     key = hashlib.sha256(json.dumps([audio_sha, cfg["model"], cfg["function_id"], cfg["language"], cfg["mode"],
                                      terms, cfg["boost"]], ensure_ascii=False).encode()).hexdigest()[:32]
     path = CACHE_DIR / f"{key}.json"
@@ -124,7 +144,7 @@ def transcribe(src: Path, contract: dict, force: bool = False) -> dict:
                 raise
             _log(model=cfg["model"], key=key, retry=attempt + 1, reason=f"{type(e).__name__}: {str(e)[:120]}")
             time.sleep(5 * (attempt + 1))
-    rec = {"model": cfg["model"], "function_id": cfg["function_id"], "language": cfg["language"], "mode": cfg["mode"],
+    rec = {"engine": cfg["engine"], "model": cfg["model"], "function_id": cfg["function_id"], "language": cfg["language"], "mode": cfg["mode"],
            "audio_sha256": audio_sha, "duration_s": round(seconds, 2), "keyterms": terms, "boost": cfg["boost"],
            "cache_key": key, "created_at": store.now(), "text": text, "words": words}
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -136,11 +156,9 @@ def transcribe(src: Path, contract: dict, force: bool = False) -> dict:
 
 def _service(cfg: dict):
     import riva.client  # lazy: replaying from cache needs no gRPC stack
-    if not cfg["function_id"]:
-        raise SttUnavailable("STT_FUNCTION_ID 가 없습니다 — build.nvidia.com 의 Nemotron ASR 모델 페이지 API 탭에서 "
-                             "function-id 를 복사해 .env 에 넣으세요. 캐시된 전사가 있으면 키 없이도 재생됩니다.")
     auth = riva.client.Auth(uri=cfg["server"], use_ssl=True, metadata_args=[
-        ["function-id", cfg["function_id"]], ["authorization", f"Bearer {api_key()}"]])
+        ["function-id", cfg["function_id"]], ["authorization", f"Bearer {api_key()}"]],
+        options=[("grpc.max_send_message_length", 16 << 20), ("grpc.max_receive_message_length", 16 << 20)])
     return riva.client, riva.client.ASRService(auth)
 
 
@@ -151,9 +169,10 @@ def _recognize(pcm: bytes, rate: int, terms: list[str], cfg: dict) -> tuple[str,
         language_code=cfg["language"], max_alternatives=1, enable_automatic_punctuation=True,
         enable_word_time_offsets=True, verbatim_transcripts=False,   # numbers as digits: «공복혈당 110», not «백십»
     )
-    riva.add_word_boosting_to_config(config, terms, cfg["boost"])
+    if terms:
+        riva.add_word_boosting_to_config(config, terms, cfg["boost"])
     if cfg["mode"] == "offline":
-        results = asr.offline_recognize(pcm, config).results
+        results = [r for seg in _segments(pcm, rate) for r in asr.offline_recognize(seg, config).results]
     else:
         step = int(rate * CHUNK_SECONDS) * 2
         chunks = (pcm[i:i + step] for i in range(0, len(pcm), step))
@@ -171,9 +190,24 @@ def _recognize(pcm: bytes, rate: int, terms: list[str], cfg: dict) -> tuple[str,
     return " ".join(t for t in texts if t), words
 
 
-def list_models() -> dict[str, list[str]]:
+def _segments(pcm: bytes, rate: int, max_s: int = SEGMENT_SECONDS, look_back_s: int = 5) -> list[bytes]:
+    """Cut 16-bit mono PCM into pieces of at most `max_s` seconds, each cut placed at the quietest 100 ms in the
+    last `look_back_s` seconds before the limit — so a cut lands between words, not inside one."""
+    samples = array("h", pcm)
+    win, limit, back = rate // 10, max_s * rate, look_back_s * rate
+    out, start = [], 0
+    while len(samples) - start > limit:
+        lo, hi = start + limit - back, start + limit
+        cut = min(range(lo, hi - win + 1, win), key=lambda i: sum(abs(x) for x in samples[i:i + win]))
+        out.append(samples[start:cut].tobytes())
+        start = cut
+    out.append(samples[start:].tobytes())
+    return out
+
+
+def list_models(engine: str | None = None) -> dict[str, list[str]]:
     """language code → model names the configured function serves. Use it to confirm ko-KR before recording."""
-    cfg = settings()
+    cfg = settings(engine)
     riva, asr = _service(cfg)
     resp = asr.stub.GetRivaSpeechRecognitionConfig(riva.proto.riva_asr_pb2.RivaSpeechRecognitionConfigRequest(),
                                                   metadata=asr.auth.get_auth_metadata())
@@ -201,7 +235,7 @@ def add_note(rec: dict, *, hcp_ref: str, specialty: str, date: str, consent_by: 
     seq = max([int(n["doc_id"][len(prefix):]) for n in notes if n["doc_id"].startswith(prefix)] + [0]) + 1
     note = {"doc_id": f"{prefix}{seq:02d}", "hcp_ref": hcp_ref.strip(), "specialty": specialty.strip(), "date": date,
             "synthetic": False, "text": rec["text"],
-            "stt": {"model": rec["model"], "language": rec["language"], "audio_name": audio_name,
+            "stt": {"engine": rec.get("engine"), "model": rec["model"], "language": rec["language"], "audio_name": audio_name,
                     "audio_sha256": rec["audio_sha256"], "duration_s": rec["duration_s"], "cache_key": rec["cache_key"],
                     "consent_by": consent_by.strip(), "transcribed_at": rec["created_at"]}}
     # append in place — the file is hand-formatted, one note per entry; re-dumping it would rewrite every line

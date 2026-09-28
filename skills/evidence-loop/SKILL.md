@@ -7,7 +7,7 @@ description: Screen a drug hypothesis (off-label demand, off-label use, repurpos
 
 An agent skill for the Agent Skills spec (works in Claude Code, OpenClaw and compatible clients).
 Runtime model: NVIDIA Nemotron 3 Ultra via NIM (`integrate.api.nvidia.com/v1`, OpenAI-compatible).
-Speech-to-text: NVIDIA Nemotron 3.5 ASR via build.nvidia.com (Riva gRPC, `grpc.nvcf.nvidia.com`).
+Speech-to-text: build.nvidia.com hosted ASR via Riva gRPC (`grpc.nvcf.nvidia.com`) — `nvidia/parakeet-1.1b-rnnt-multilingual-asr` (default, ko-KR, word boosting) or `openai/whisper-large-v3` (`--engine whisper`).
 
 ## When to use
 - "Is there public evidence for <drug> in <patient group>?"
@@ -17,7 +17,7 @@ Speech-to-text: NVIDIA Nemotron 3.5 ASR via build.nvidia.com (Riva gRPC, `grpc.n
 ## Commands (run from the repo root)
 ```
 uv run python -m loop.cli transcribe <audio> --hcp <ref> --specialty <text> --date YYYY-MM-DD --consent-by "<name>"
-                                                # interview audio → Nemotron 3.5 ASR (ko-KR) transcript → one field note
+                                                # interview audio → Parakeet multilingual (ko-KR) or Whisper transcript → one field note
 uv run python -m loop.cli sense                 # field notes → claims (verbatim quotes verified by code) → hypotheses over threshold
 uv run python -m loop.cli hypotheses
 uv run python -m loop.cli screen HYP-001        # 3 agents (PubMed / CT.gov / label) + FAERS and Part D numbers
