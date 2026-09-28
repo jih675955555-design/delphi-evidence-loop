@@ -56,12 +56,19 @@ def run(state: dict, contract: dict, notes: list[dict], force: bool = False, wor
         # the transcription record (audio hash, consent) is provenance, not interview content — the model never sees it.
         # Notes without it serialise exactly as before, so their cached outputs still replay.
         seen = {k: v for k, v in note.items() if k != "stt"}
-        return call_structured("sense", system=system, user=json.dumps(seen, ensure_ascii=False),
-                               schema_name="sense_claims_v1", schema=SENSE_SCHEMA, force=force)
+        try:
+            return call_structured("sense", system=system, user=json.dumps(seen, ensure_ascii=False),
+                                   schema_name="sense_claims_v1", schema=SENSE_SCHEMA, force=force)
+        except Exception as e:  # noqa: BLE001 — one note failing must not sink the batch; it is reported and skipped
+            print(f"[추출 실패] {note['doc_id']}: {type(e).__name__}: {str(e)[:120]}")
+            return None
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         outputs = list(pool.map(extract, todo))
+    stats["failed"] = [n["doc_id"] for n, o in zip(todo, outputs) if o is None]
     for note, out in zip(todo, outputs):
+        if out is None:
+            continue
         stats["docs"] += 1
         for i, c in enumerate(out["claims"], 1):
             loc = locate(c["quote"], note["text"])
