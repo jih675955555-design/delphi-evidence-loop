@@ -10,24 +10,12 @@ Nothing is written to data/field_notes.json. Transcripts are cached in data/stt_
 """
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from loop import llm, store, stt  # noqa: E402
-
-
-def cer(hyp: str, ref: str) -> float:
-    norm = lambda s: re.sub(r"[\s\W_]+", "", s.lower())   # noqa: E731
-    h, r = norm(hyp), norm(ref)
-    prev = list(range(len(h) + 1))
-    for i, rc in enumerate(r, 1):
-        cur = [i]
-        for j, hc in enumerate(h, 1):
-            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (rc != hc)))
-        prev = cur
-    return prev[-1] / max(len(r), 1)
+from loop.stt import cer  # noqa: E402 — one implementation, shared with the collection page
 
 
 def main() -> int:
@@ -43,7 +31,7 @@ def main() -> int:
 
     try:
         key = llm.api_key()
-        print(f"[OK]   NVIDIA_API_KEY nvapi-…{key[-3:]}")
+        print("[OK]   NVIDIA_API_KEY 있음")
     except llm.LlmUnavailable as e:
         print(f"[FAIL] {e}")
         return 1

@@ -10,7 +10,7 @@ import html
 LEVEL = {"fact": "사실", "pattern": "패턴", "interp": "해석", "proposal": "제안", "action": "실행"}
 STANCE = {"SUPPORTS": ("지지", "support"), "CONTRADICTS": ("반대", "oppose"), "NEUTRAL": ("중립", "hold")}
 STATUS_KO = {"DRAFT": "초안", "SCREENED": "근거 수집됨", "REVIEWED": "서명됨", "DELIBERATED": "심의됨"}
-NAV = [("/console", "개요"), ("/notes", "면담 기록"), ("/claims", "발언 카드"), ("/hypotheses", "가설"), ("/checklist", "체크리스트")]
+NAV = [("/console", "개요"), ("/collect", "현장 수집"), ("/notes", "면담 기록"), ("/claims", "발언 카드"), ("/hypotheses", "가설"), ("/checklist", "체크리스트")]
 SIGNAL_KO = {
     "OFF_LABEL_DEMAND": "쓰고 싶은데 막혔다", "OFF_LABEL_USE": "써봤다 · 반응 보고", "REPURPOSING": "다른 쓰임",
     "UNMET_NEED": "충족되지 않은 필요", "DOSING": "용량 · 제형", "SAFETY_TOLERABILITY": "안전성 · 내약성",
@@ -131,6 +131,13 @@ mark{background:var(--orange-soft);color:inherit;padding:0 2px;border-radius:3px
 .steps li{counter-increment:s;background:var(--fill-1);border-radius:6px;padding:8px 10px;font-size:var(--fs-xs)}
 .steps li::before{content:counter(s);display:inline-block;width:18px;height:18px;border-radius:50%;background:var(--navy);color:var(--on-navy);font-size:11px;text-align:center;line-height:18px;margin-right:6px;font-weight:700}
 @media(max-width:860px){.steps{grid-template-columns:1fr}}
+/* collection — listen while STT listens */
+.script-text{white-space:pre-wrap;line-height:1.9;color:var(--body)}
+.heard{min-height:7.6em;line-height:1.9;color:var(--ink);white-space:pre-wrap}.heard .interim{color:var(--faint)}
+audio{width:100%;margin:8px 0 2px}
+mark.miss{background:var(--rust-soft);color:inherit;padding:0 1px;border-radius:2px}
+.strip.j.c5{grid-template-columns:repeat(5,1fr)}@media(max-width:860px){.strip.j.c5{grid-template-columns:repeat(2,1fr)}}
+.btn:disabled{opacity:.45;cursor:default}
 """
 
 FONTS = '<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=Manrope:wght@600;700;800&family=Noto+Sans+Mono:wght@400;500&display=swap" rel="stylesheet">'

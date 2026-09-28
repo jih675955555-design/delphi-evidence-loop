@@ -1,0 +1,24 @@
+{
+ "purpose": "sense",
+ "model": "nvidia/nemotron-3-ultra-550b-a55b",
+ "schema_name": "sense_claims_v1",
+ "mode": "tool_call",
+ "thinking": null,
+ "usage": {
+  "input": 1068,
+  "output": 430
+ },
+ "created_at": "2026-09-28T14:17:29",
+ "output": {
+  "claims": [
+   {
+    "segment": "임신부 · 임신성 당뇨",
+    "signal_type": "OFF_LABEL_DEMAND",
+    "quote": "이럴 때 메트포르민을 쓰고 싶어도 국내 허가가 없어서 쓸 수가 없다. 먹는 약으로 바꿔드리고 싶어도 허가 밖 처방이라 그러지 못한다.",
+    "is_adverse_event": false,
+    "note_ko": "임신성 당뇨 산모가 인슐린을 거부할 때 메트포르민을 경구약으로 전환하고 싶으나 국내 허가 부재로 처방이 불가능하다는 미충족 수요 발언"
+   }
+  ]
+ },
+ "reasoning": "The user has provided a clinical interview record about a pregnant woman with gestational diabetes who refuses insulin. The physician wants to use metformin but cannot due to lack of domestic approval in Korea, even though international guidelines allow it. This is clearly an OFF_LABEL_DEMAND signal for the patient segment \"임신부 · 임신성 당뇨\" (pregnant women / gestational diabetes). The quote should be exact from the text. No adverse event mentioned. Let me extract the relevant segment and quote. The text: \"산부인과에서 의뢰된 임신성 당뇨산모를 같이 보는데 시기 조절로 혈당이 안 잡히는데도 인슐린을 끝까지 거부하는 분들이 있다. 이럴 때 메트포르민을 쓰고 싶어도 국내 허가가 없어서 쓸 수가 없다. 먹는 약으로 바꿔드리고 싶어도 허가 밖 처방이라 그러지 못한다. 매국 지침에는 있는데 우리만 막혀 있어 답답하다고 했다.\"\n\nI need to identify the segment (patient group) and signal type. Segment: \"임신부 · 임신성 당뇨\". Signal: OFF_LABEL_DEMAND (want to use but blocked by approval). Quote: exact phrase. Is adverse event: false. Note_ko: Korean sentence explaining why.\n\nI'll call the function with the claim."
+}

@@ -1,4 +1,5 @@
-"""CLI — the whole loop in six commands, plus the audio entrance (transcribe). Every screen line is tagged with one of five levels:
+"""CLI — the whole loop in six commands, plus the two entrances: a recording (transcribe) and a script read aloud (collect).
+Every screen line is tagged with one of five levels:
 [사실] 관찰된 사실 · [패턴] 통계적 패턴 · [해석] AI의 해석 · [제안] 전략적 제안 · [실행] 승인된 실행
 """
 from __future__ import annotations
@@ -6,7 +7,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from . import board, screen, sense, store, stt
+from . import board, collect, screen, sense, store, stt, tts
 
 STANCE_KO = {"SUPPORTS": "지지", "CONTRADICTS": "반대", "NEUTRAL": "중립"}
 
@@ -15,7 +16,7 @@ def cmd_transcribe(args):
     from pathlib import Path
     rec = stt.transcribe(Path(args.audio), store.contract(), force=args.force, engine=args.engine)
     print(f"[사실] {args.audio} {rec['duration_s']}초 → {len(rec['text'])}자 · {rec['model']} ({rec['language']}, {rec['mode']}) · "
-          + (f"도메인 용어 {len(rec['keyterms'])}개 가중" if rec['keyterms'] else "단어 가중 없음"))
+          + (f"도메인 용어 {len(rec['keyterms'])}개 가중 (STT_BOOST={rec['boost']:g})" if rec['keyterms'] else "단어 가중 없음 (기본)"))
     print(f"        “{rec['text'][:300]}{'…' if len(rec['text']) > 300 else ''}”")
     if args.no_save:
         print("[사실] --no-save: 면담 기록에 넣지 않았습니다")
@@ -29,6 +30,57 @@ def cmd_stt_models(args):
     print(f"[사실] {stt.settings(args.engine)['model']} · function-id {stt.settings(args.engine)['function_id']}")
     for lang, models in stt.list_models(args.engine).items():
         print(f"[사실] {lang:<8} {', '.join(models)}")
+
+
+def cmd_scripts(args):
+    state, contract = store.load(), store.contract()
+    rows = {(r["segment"], r["signal_type"]): r for r in sense.tally(state)}
+    done = collect.collected(json.loads(store.FIELD_NOTES.read_text()))
+    thr = contract["threshold"]
+    src = collect.source_info()
+    print(f"[사실] 대본 {collect.SCRIPTS_DIR.relative_to(store.ROOT)} · GitHub {src['repo'] or '?'} @ {src['ref'] or src['commit'][:7] or '?'}")
+    for s in collect.list_scripts(contract):
+        if "_error" in s:
+            print(f"[사실] {s['script_id']}  형식 오류 — {s['_error']}")
+            continue
+        a, it = collect.audio(s), s["intent"]
+        cur = rows.get((it["segment"], it["signal_type"]), {"mentions": 0, "hcps": 0})
+        heard = "전사 있음" if a and collect.saved_transcript(s) else "전사 없음"
+        state_ko = f"수집됨 → {done[s['script_id']]['doc_id']}" if s["script_id"] in done else heard
+        print(f"[사실] {s['script_id']}  {s['hcp_ref']} · {s['specialty']} · {s['date']} · {s['chars']}자 · "
+              f"{'음성 %.1f초' % a['duration_s'] if a else '음성 없음'} · {state_ko} — {s['title_ko']}")
+        print(f"[패턴]        의도 {it['segment']} × {it['signal_type']} · 지금 {cur['mentions']}회/{cur['hcps']}인 (문턱 {thr['min_mentions']}회·{thr['min_hcps']}인)")
+
+
+def cmd_collect(args):
+    s = collect.get(args.script)
+    a = collect.audio(s)
+    if not a:
+        a = collect.make_audio(s)
+        print(f"[실행] {s['script_id']} 음성 생성 — {a['tts']['model']} · {a['duration_s']}초 · {a['tts']['chunks']}조각 · {a['bytes'] // 1024} KB")
+    else:
+        print(f"[사실] {s['script_id']} 음성 {a['duration_s']}초 ({'저장소' if a['source'] == 'baked' else '이 서버'}) · sha256 {a['audio_sha256'][:8]}")
+    rec = collect.transcript(s, engine=args.engine or "parakeet", mode="cached")
+    print(f"[사실] {rec['model']} → {len(rec['text'])}자 · 대본 대비 CER {stt.cer(rec['text'], s['text']):.1%} (띄어쓰기·문장부호 제외, 코드 계산)"
+          + (" · 단어 가중 없음" if not rec["keyterms"] else f" · 단어 가중 {rec['boost']:g}"))
+    print(f"        “{rec['text']}”")
+    if args.no_save:
+        print("[사실] --no-save: 면담 기록에 넣지 않았습니다")
+        return
+    note = collect.save(s, args.consent_by, rec, listen_mode="cli")
+    print(f"[실행] {note['doc_id']} 로 면담 기록에 추가 (녹음 동의 확인: {note['stt']['consent_by']}) — 다음: `sense`")
+
+
+def cmd_uncollect(args):
+    r = collect.uncollect()
+    print(f"[실행] 면담 기록 {len(r['notes'])}건 {r['notes']} · 발언 카드 {r['claims']} · 유해사례 후보 {r['safety']} · 가설 {r['hypotheses']} 을 지웠습니다")
+
+
+def cmd_tts_voices(args):
+    cfg = tts.settings()
+    print(f"[사실] {cfg['model']} · function-id {cfg['function_id']} · 기본 음성 {cfg['voice']}")
+    for lang, voices in tts.list_voices().items():
+        print(f"[사실] {lang:<8} {', '.join(voices)}")
 
 
 def cmd_sense(args):
@@ -123,6 +175,12 @@ def main():
     s.add_argument("--no-save", action="store_true", help="전사만 보고 면담 기록에는 넣지 않는다"); s.set_defaults(fn=cmd_transcribe)
     s = sub.add_parser("stt-models", help="STT 함수가 서비스하는 언어·모델 (ko-KR 확인)")
     s.add_argument("--engine", choices=list(stt.ENGINES), default=None); s.set_defaults(fn=cmd_stt_models)
+    sub.add_parser("scripts", help="현장 수집 대본 목록 (data/field_scripts · 의도와 지금 집계)").set_defaults(fn=cmd_scripts)
+    s = sub.add_parser("collect", help="대본 → Chatterbox TTS → STT → 면담 기록 (현장 수집)"); s.add_argument("script", help="예: FS-01")
+    s.add_argument("--consent-by", default="", help="녹음 동의를 확인한 사람"); s.add_argument("--engine", choices=list(stt.ENGINES), default=None)
+    s.add_argument("--no-save", action="store_true", help="전사와 CER만 보고 면담 기록에는 넣지 않는다"); s.set_defaults(fn=cmd_collect)
+    sub.add_parser("uncollect", help="대본에서 수집한 면담 기록과 그로부터 생긴 것만 되돌린다").set_defaults(fn=cmd_uncollect)
+    sub.add_parser("tts-voices", help="TTS 함수가 서비스하는 언어·음성 (ko-KR 확인)").set_defaults(fn=cmd_tts_voices)
     s = sub.add_parser("sense", help="면담 기록 → 구조화 → 가설 초안"); s.add_argument("--force", action="store_true")
     s.add_argument("--min-mentions", type=int, default=None); s.add_argument("--min-hcps", type=int, default=None); s.set_defaults(fn=cmd_sense)
     sub.add_parser("hypotheses", help="가설 목록").set_defaults(fn=cmd_hypotheses)

@@ -1,0 +1,257 @@
+{
+ "baked_at": "2026-09-28T14:18:26",
+ "engine": "parakeet",
+ "boost": 0,
+ "tts": {
+  "model": "resembleai/chatterbox-multilingual-tts",
+  "function_id": "ddacc747-1269-4fab-bfd9-8f593dead106",
+  "voice": "Chatterbox-Multilingual.ko-KR.Male"
+ },
+ "scripts": {
+  "FS-01": {
+   "audio_sha256": "2d77b82dc4a2abd0e926d7a266b8b65f8f10dd1c9871b57b1f73ce42119e587d",
+   "duration_s": 25.71,
+   "stt_cache_key": "e7ef7f5eabdb035701a316525949bf2a",
+   "cer": 0.0769,
+   "chars": 209
+  },
+  "FS-02": {
+   "audio_sha256": "d434489a6644d586badae6f0dfdb8fb0b10732ee57c729dedfcc4b2a4cc6648e",
+   "duration_s": 19.33,
+   "stt_cache_key": "2a5fe8cf6c00473150b09ccf26e7855c",
+   "cer": 0.0508,
+   "chars": 161
+  },
+  "FS-03": {
+   "audio_sha256": "3436f84b32f0aea47c13d3fa0c5784ce5c2da2c598a7f5f9caa43847fb7582f3",
+   "duration_s": 20.85,
+   "stt_cache_key": "dd5c7b4f608b41185c3e466b4a3a58aa",
+   "cer": 0.0312,
+   "chars": 175
+  },
+  "FS-04": {
+   "audio_sha256": "23a16686f03ba86e2a682d4faecdcbe5453454c37d74c5dee4ca0703ac0a002c",
+   "duration_s": 18.69,
+   "stt_cache_key": "a85f07ed576799ba3b6de8bc5f2cec3a",
+   "cer": 0.0259,
+   "chars": 157
+  }
+ },
+ "llm_keys": [
+  "080410a91440c2cb35b438c483f07aaf",
+  "1875c2f01a59886c921d4eaa96f8162b",
+  "1a18b8bde87e11c6c140565f5719bfb1",
+  "3c59fecbcada64ebfe088837dfe13021",
+  "6167dee4d60cd116d5c9ba74ae4d57e7",
+  "728cd59b07b4154cfa67626d7bc94876",
+  "79ea3772d701b1b3f6ee674bffcdbe2b",
+  "7db8a9042a57a6db4ca2694ba0dd0119",
+  "873f52cd984258ea7a169a779ffa39bd",
+  "941a78dd67fb338bba4d42b612f3292b",
+  "a15707f5aeb9b6292ff3b3d314722739",
+  "abbe86292b274eb5e21c0b2b6ffce546",
+  "b05b0bad4dcca88a79a6f2295d50f171",
+  "bea16e153850f6fa779cddc807092d7e",
+  "c551756a46807c2fa56fdd6c9fa13ed2",
+  "dec923cde4bc4323f21a407dc41dfbb8",
+  "eb2db08b26fa1da184e48f74dc65df4b",
+  "f3c64d9e356dae49c1282c2391324525"
+ ],
+ "effect": {
+  "committed_state": {
+   "sense": {
+    "docs": 4,
+    "kept": 9,
+    "dropped": 1,
+    "adverse_events": 1
+   },
+   "created": [
+    {
+     "id": "HYP-006",
+     "segment": "노인 65+ · 신기능 저하",
+     "signal_type": "DOSING",
+     "mentions": 7,
+     "hcps": 3
+    }
+   ],
+   "rows": [
+    {
+     "segment": "노인 65+ · 신기능 저하",
+     "signal_type": "DOSING",
+     "before": [
+      3,
+      2
+     ],
+     "after": [
+      7,
+      3
+     ],
+     "passed_before": false,
+     "passed_after": true,
+     "need_mentions": 0,
+     "need_hcps": 0,
+     "hypothesis_id": "HYP-006",
+     "new_hypothesis": true
+    },
+    {
+     "segment": "임신부 · 임신성 당뇨",
+     "signal_type": "OFF_LABEL_DEMAND",
+     "before": [
+      1,
+      1
+     ],
+     "after": [
+      3,
+      2
+     ],
+     "passed_before": false,
+     "passed_after": false,
+     "need_mentions": 2,
+     "need_hcps": 1,
+     "hypothesis_id": null,
+     "new_hypothesis": false
+    },
+    {
+     "segment": "청소년 10-17세",
+     "signal_type": "DOSING",
+     "before": [
+      0,
+      0
+     ],
+     "after": [
+      2,
+      1
+     ],
+     "passed_before": false,
+     "passed_after": false,
+     "need_mentions": 3,
+     "need_hcps": 2,
+     "hypothesis_id": null,
+     "new_hypothesis": false
+    },
+    {
+     "segment": "임신부 · 임신성 당뇨",
+     "signal_type": "UNMET_NEED",
+     "before": [
+      0,
+      0
+     ],
+     "after": [
+      1,
+      1
+     ],
+     "passed_before": false,
+     "passed_after": false,
+     "need_mentions": 4,
+     "need_hcps": 2,
+     "hypothesis_id": null,
+     "new_hypothesis": false
+    }
+   ],
+   "safety_added": 1,
+   "dropped": 1,
+   "claims_added": 10
+  },
+  "fresh_state": {
+   "sense": {
+    "docs": 16,
+    "kept": 39,
+    "dropped": 1,
+    "adverse_events": 3
+   },
+   "created": [
+    {
+     "id": "HYP-001",
+     "segment": "노인 65+ · 신기능 저하",
+     "signal_type": "DOSING",
+     "mentions": 7,
+     "hcps": 3
+    },
+    {
+     "id": "HYP-002",
+     "segment": "PCOS 여성",
+     "signal_type": "OFF_LABEL_USE",
+     "mentions": 6,
+     "hcps": 4
+    }
+   ],
+   "rows": [
+    {
+     "segment": "노인 65+ · 신기능 저하",
+     "signal_type": "DOSING",
+     "before": [
+      3,
+      2
+     ],
+     "after": [
+      7,
+      3
+     ],
+     "passed_before": false,
+     "passed_after": true,
+     "need_mentions": 0,
+     "need_hcps": 0,
+     "hypothesis_id": "HYP-001",
+     "new_hypothesis": true
+    },
+    {
+     "segment": "임신부 · 임신성 당뇨",
+     "signal_type": "OFF_LABEL_DEMAND",
+     "before": [
+      1,
+      1
+     ],
+     "after": [
+      3,
+      2
+     ],
+     "passed_before": false,
+     "passed_after": false,
+     "need_mentions": 2,
+     "need_hcps": 1,
+     "hypothesis_id": null,
+     "new_hypothesis": false
+    },
+    {
+     "segment": "청소년 10-17세",
+     "signal_type": "DOSING",
+     "before": [
+      0,
+      0
+     ],
+     "after": [
+      2,
+      1
+     ],
+     "passed_before": false,
+     "passed_after": false,
+     "need_mentions": 3,
+     "need_hcps": 2,
+     "hypothesis_id": null,
+     "new_hypothesis": false
+    },
+    {
+     "segment": "임신부 · 임신성 당뇨",
+     "signal_type": "UNMET_NEED",
+     "before": [
+      0,
+      0
+     ],
+     "after": [
+      1,
+      1
+     ],
+     "passed_before": false,
+     "passed_after": false,
+     "need_mentions": 4,
+     "need_hcps": 2,
+     "hypothesis_id": null,
+     "new_hypothesis": false
+    }
+   ],
+   "safety_added": 1,
+   "dropped": 1,
+   "claims_added": 10
+  }
+ }
+}

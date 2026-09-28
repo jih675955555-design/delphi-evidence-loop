@@ -12,9 +12,14 @@ Same rules as llm.py:
 
 Two engines, both Riva gRPC on NVCF (grpc.nvcf.nvidia.com:443), chosen with STT_ENGINE or `--engine`:
 - parakeet (default) — nvidia/parakeet-1.1b-rnnt-multilingual-asr. NVIDIA's own model, 25 languages incl. ko-KR,
-  streaming, word boosting with the contract's vocabulary.
+  streaming (interim results while the audio plays — the collection page shows them).
 - whisper — openai/whisper-large-v3. Strong Korean, but offline only, no word boosting, and known to invent text
   over silence; long audio is cut at quiet points into ≤ 60 s requests.
+
+Word boosting (the contract's stt_keyterms) is OFF by default and opt-in with STT_BOOST > 0 (parakeet only).
+Measured 2026-09-28 on clean TTS audio of a field-note script: CER 4.4 % with boost off, 8.8 % at 2, 51 % at 5,
+109 % at 10 — the model loops on the boosted words. Worse, at 2 it turned the spoken «당뇨 적응증» into the segment
+name «당뇨 전단계»: boosting a segment name fabricates a field signal that the tally would then count.
 build.nvidia.com's nemotron-asr-streaming is English-only, so it is not an option for Korean interviews.
 
 Which model answers is decided by the NVCF function id. The defaults below are the public hosted deployments;
@@ -44,7 +49,7 @@ RUNS_LOG = ROOT / "data" / "stt_runs.jsonl"
 CHUNK_SECONDS = 0.2     # streaming chunk size
 SEGMENT_SECONDS = 60    # offline requests stay well under gRPC's 4 MB message limit (60 s of 16 kHz PCM ≈ 1.9 MB)
 
-ENGINES = {
+ENGINES = {   # "boost": the engine *can* take word boosting — it is still off unless STT_BOOST > 0 (see above)
     "parakeet": {"model": "nvidia/parakeet-1.1b-rnnt-multilingual-asr", "function_id": "71203149-d3b7-4460-8231-1be2543a1fca",
                  "language": "ko-KR", "mode": "streaming", "boost": True},
     "whisper": {"model": "openai/whisper-large-v3", "function_id": "b702f636-f60c-4a3d-a6f4-f3568c13bd7d",
@@ -68,12 +73,12 @@ def settings(engine: str | None = None) -> dict:
         "function_id": os.environ.get(f"STT_FUNCTION_ID_{engine.upper()}", e["function_id"]),
         "language": os.environ.get("STT_LANGUAGE", e["language"]),
         "mode": e["mode"],
-        "boost": float(os.environ.get("STT_BOOST", "20")) if e["boost"] else 0.0,
+        "boost": float(os.environ.get("STT_BOOST", "0")) if e["boost"] else 0.0,   # opt-in: boosting invents segment names
     }
 
 
 def keyterms(contract: dict) -> list[str]:
-    """Words the recogniser should prefer — the contract's vocabulary, decided by people, not by the model."""
+    """Words the recogniser should prefer when STT_BOOST > 0 — the contract's vocabulary, decided by people, not by the model."""
     terms = list(contract.get("stt_keyterms", [])) + [contract["drug_ko"], contract["drug"]]
     for seg in contract["segments"]:
         terms += [p for p in re.split(r"\s*·\s*", seg) if not re.search(r"\d", p)]   # «소아 10세 미만» boosts nothing useful
@@ -114,15 +119,25 @@ def _log(**rec) -> None:
         f.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), **rec}, ensure_ascii=False) + "\n")
 
 
-def transcribe(src: Path, contract: dict, force: bool = False, engine: str | None = None) -> dict:
+def cache_key(audio_sha: str, cfg: dict, terms: list[str]) -> str:
+    """Same audio, model, language, mode and vocabulary → same transcript record."""
+    return hashlib.sha256(json.dumps([audio_sha, cfg["model"], cfg["function_id"], cfg["language"], cfg["mode"],
+                                      terms, cfg["boost"]], ensure_ascii=False).encode()).hexdigest()[:32]
+
+
+def transcribe(src: Path, contract: dict, force: bool = False, engine: str | None = None, *,
+               cache_dir: Path | None = None, on_partial=None, pace: float = 0.0) -> dict:
     """Transcript record for one recording, from cache if this exact audio was transcribed before with the
-    same model, language and vocabulary."""
+    same model, language and vocabulary.
+
+    `on_partial(finals, interim)` receives the text as it is recognised (streaming engines send interim results);
+    `pace` > 0 feeds the audio at that multiple of real time — 1.0 is «the model hears it while you hear it»."""
     cfg = settings(engine)
+    cache_dir = cache_dir or CACHE_DIR
     audio_sha = hashlib.sha256(src.read_bytes()).hexdigest()
     terms = keyterms(contract) if cfg["boost"] else []
-    key = hashlib.sha256(json.dumps([audio_sha, cfg["model"], cfg["function_id"], cfg["language"], cfg["mode"],
-                                     terms, cfg["boost"]], ensure_ascii=False).encode()).hexdigest()[:32]
-    path = CACHE_DIR / f"{key}.json"
+    key = cache_key(audio_sha, cfg, terms)
+    path = cache_dir / f"{key}.json"
     t0 = time.time()
     if path.exists() and not force:
         rec = json.loads(path.read_text())
@@ -133,7 +148,7 @@ def transcribe(src: Path, contract: dict, force: bool = False, engine: str | Non
     text = words = None
     for attempt in range(4):   # the free endpoint rate-limits bursts
         try:
-            text, words = _recognize(pcm, rate, terms, cfg)
+            text, words = _recognize(pcm, rate, terms, cfg, on_partial=on_partial, pace=pace)
             if not text.strip():
                 raise ValueError("전사 결과가 비어 있습니다 — 무음이거나 지원하지 않는 언어일 수 있습니다")
             break
@@ -162,7 +177,8 @@ def _service(cfg: dict):
     return riva.client, riva.client.ASRService(auth)
 
 
-def _recognize(pcm: bytes, rate: int, terms: list[str], cfg: dict) -> tuple[str, list[dict]]:
+def _recognize(pcm: bytes, rate: int, terms: list[str], cfg: dict, *, on_partial=None, pace: float = 0.0) -> tuple[str, list[dict]]:
+    t0 = time.time()   # before the channel connects: a paced stream catches up to the listener's clock
     riva, asr = _service(cfg)
     config = riva.RecognitionConfig(
         encoding=riva.AudioEncoding.LINEAR_PCM, sample_rate_hertz=rate, audio_channel_count=1,
@@ -171,14 +187,32 @@ def _recognize(pcm: bytes, rate: int, terms: list[str], cfg: dict) -> tuple[str,
     )
     if terms:
         riva.add_word_boosting_to_config(config, terms, cfg["boost"])
-    if cfg["mode"] == "offline":
+    if cfg["mode"] == "offline":   # nothing to show while it runs — one callback at the end
         results = [r for seg in _segments(pcm, rate) for r in asr.offline_recognize(seg, config).results]
     else:
         step = int(rate * CHUNK_SECONDS) * 2
-        chunks = (pcm[i:i + step] for i in range(0, len(pcm), step))
-        results = [r for resp in asr.streaming_response_generator(
-                       chunks, riva.StreamingRecognitionConfig(config=config, interim_results=False))
-                   for r in resp.results if r.is_final]
+
+        def chunks():
+            for i in range(0, len(pcm), step):
+                if pace > 0:
+                    wait = t0 + i / 2 / rate / pace - time.time()
+                    if wait > 0:
+                        time.sleep(wait)
+                yield pcm[i:i + step]
+        results, finals = [], []
+        for resp in asr.streaming_response_generator(
+                chunks(), riva.StreamingRecognitionConfig(config=config, interim_results=on_partial is not None)):
+            interim = []
+            for r in resp.results:
+                if not r.alternatives:
+                    continue
+                if r.is_final:
+                    results.append(r)
+                    finals.append(r.alternatives[0].transcript.strip())
+                else:
+                    interim.append(r.alternatives[0].transcript.strip())
+            if on_partial is not None:
+                on_partial([f for f in finals if f], " ".join(t for t in interim if t))
     texts, words = [], []
     for r in results:
         if not r.alternatives:
@@ -187,7 +221,10 @@ def _recognize(pcm: bytes, rate: int, terms: list[str], cfg: dict) -> tuple[str,
         texts.append(alt.transcript.strip())
         words += [{"word": w.word, "start_ms": w.start_time, "end_ms": w.end_time,
                    "confidence": round(w.confidence, 3)} for w in alt.words]
-    return " ".join(t for t in texts if t), words
+    text = " ".join(t for t in texts if t)
+    if on_partial is not None and cfg["mode"] == "offline":
+        on_partial([text] if text else [], "")
+    return text, words
 
 
 def _segments(pcm: bytes, rate: int, max_s: int = SEGMENT_SECONDS, look_back_s: int = 5) -> list[bytes]:
@@ -218,10 +255,27 @@ def list_models(engine: str | None = None) -> dict[str, list[str]]:
     return dict(sorted(out.items()))
 
 
+def cer(hyp: str, ref: str) -> float:
+    """Character error rate — edit distance / reference length, with case, spaces and punctuation ignored
+    (Korean spacing varies between writers; it is not an error in what was heard). Computed by code, never by a model."""
+    norm = lambda s: re.sub(r"[\s\W_]+", "", (s or "").lower())   # noqa: E731
+    h, r = norm(hyp), norm(ref)
+    prev = list(range(len(h) + 1))
+    for i, rc in enumerate(r, 1):
+        cur = [i]
+        for j, hc in enumerate(h, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (rc != hc)))
+        prev = cur
+    return prev[-1] / max(len(r), 1)
+
+
 def add_note(rec: dict, *, hcp_ref: str, specialty: str, date: str, consent_by: str, audio_name: str,
-             notes_path: Path | None = None) -> dict:
+             notes_path: Path | None = None, synthetic: bool = False, provenance: dict | None = None) -> dict:
     """Append the transcript as a field note. Consent is a named person, like the two gates downstream —
-    no name, no note. The same recording is never added twice."""
+    no name, no note. The same recording is never added twice.
+
+    `synthetic` marks audio made from a written script (the collection demo); `provenance` adds keys under
+    note["stt"] — like the rest of that block it is never shown to the extraction model."""
     notes_path = notes_path or store.FIELD_NOTES
     if not consent_by.strip():
         raise SystemExit("녹음 동의를 확인한 사람의 이름이 없습니다 — 동의 확인 없이는 면담 기록이 되지 않습니다.")
@@ -234,10 +288,10 @@ def add_note(rec: dict, *, hcp_ref: str, specialty: str, date: str, consent_by: 
     prefix = f"FN-{date[:4]}-{date[5:7]}{date[8:]}-"
     seq = max([int(n["doc_id"][len(prefix):]) for n in notes if n["doc_id"].startswith(prefix)] + [0]) + 1
     note = {"doc_id": f"{prefix}{seq:02d}", "hcp_ref": hcp_ref.strip(), "specialty": specialty.strip(), "date": date,
-            "synthetic": False, "text": rec["text"],
+            "synthetic": bool(synthetic), "text": rec["text"],
             "stt": {"engine": rec.get("engine"), "model": rec["model"], "language": rec["language"], "audio_name": audio_name,
                     "audio_sha256": rec["audio_sha256"], "duration_s": rec["duration_s"], "cache_key": rec["cache_key"],
-                    "consent_by": consent_by.strip(), "transcribed_at": rec["created_at"]}}
+                    "consent_by": consent_by.strip(), "transcribed_at": rec["created_at"], **(provenance or {})}}
     # append in place — the file is hand-formatted, one note per entry; re-dumping it would rewrite every line
     body = notes_path.read_text().rstrip() if notes else "[\n]"
     entry = "  " + json.dumps(note, ensure_ascii=False)
@@ -245,3 +299,34 @@ def add_note(rec: dict, *, hcp_ref: str, specialty: str, date: str, consent_by: 
     json.loads(body)   # never leave a broken input file behind
     notes_path.write_text(body)
     return note
+
+
+def remove_notes(doc_ids, notes_path: Path | None = None) -> list[dict]:
+    """Undo add_note for these doc_ids: drop their one-line entries, keep every other byte. Refuses (and writes
+    nothing) if a target is not a one-line entry or if anything else would change."""
+    notes_path = notes_path or store.FIELD_NOTES
+    targets = set(doc_ids)
+    if not targets or not notes_path.exists():
+        return []
+    text = notes_path.read_text()
+    before = json.loads(text)
+    removed, keep = [], []
+    for line in text.split("\n"):
+        s = line.strip().rstrip(",")
+        if s.startswith("{") and s.endswith("}"):
+            try:
+                obj = json.loads(s)
+            except ValueError:
+                obj = None
+            if isinstance(obj, dict) and obj.get("doc_id") in targets:
+                removed.append(obj)
+                continue
+        keep.append(line)
+    present = {n["doc_id"] for n in before} & targets
+    if {n["doc_id"] for n in removed} != present or len(removed) != len(present):
+        raise SystemExit("면담 기록 파일에서 지울 항목을 한 줄씩 찾지 못했습니다 — 파일을 그대로 둡니다.")
+    body = re.sub(r",(\s*\]\s*)$", r"\1", "\n".join(keep))
+    if json.loads(body) != [n for n in before if n["doc_id"] not in targets]:
+        raise SystemExit("되돌린 결과가 원래 기록과 맞지 않습니다 — 파일을 그대로 둡니다.")
+    notes_path.write_text(body)
+    return removed

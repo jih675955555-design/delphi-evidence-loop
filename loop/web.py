@@ -3,7 +3,8 @@
 Every button runs the same code the CLI runs. The two human gates take a name; the name is what the
 record keeps. Model steps replay from cache when the input is unchanged, so a demo click is instant
 unless it is genuinely new work. The board runs in a background thread and streams its turns to the
-meeting page; while it runs, other mutating actions are refused.
+meeting page; while it runs, other mutating actions are refused. Listening on the collection page also runs in
+a background thread, one script at a time, and writes only its live file (data/collect_runtime/live/).
 """
 from __future__ import annotations
 
@@ -14,10 +15,10 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import board, compat, intro, live, pages, runner, screen, sense, store, stt
+from . import board, collect, compat, intro, live, pages, runner, screen, sense, store, stt
 
 app = FastAPI(title="DELPHi — Evidence Loop")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -124,16 +125,19 @@ def state_json():
     return JSONResponse(store.load())
 
 
+def _sense_and_draft() -> str:
+    """① 추출 — the same step whether it is started from the overview or from the collection page."""
+    state, contract = store.load(), store.contract()
+    notes = json.loads(store.FIELD_NOTES.read_text())
+    st = sense.run(state, contract, notes)
+    created = sense.draft_hypotheses(state, contract, contract["threshold"]["min_mentions"], contract["threshold"]["min_hcps"])
+    return (f"면담 {st['docs']}건 · 인용 검증 통과 {st['kept']} · 버림 {st['dropped']} · 유해사례 후보 {st['adverse_events']}"
+            f" → 새 가설 {len(created)}개" + (f" ({', '.join(h['id'] for h in created)})" if created else ""))
+
+
 @app.post("/run/sense")
 def run_sense():
-    def go():
-        state, contract = store.load(), store.contract()
-        notes = json.loads(store.FIELD_NOTES.read_text())
-        st = sense.run(state, contract, notes)
-        created = sense.draft_hypotheses(state, contract, contract["threshold"]["min_mentions"], contract["threshold"]["min_hcps"])
-        return (f"면담 {st['docs']}건 · 인용 검증 통과 {st['kept']} · 버림 {st['dropped']} · 유해사례 후보 {st['adverse_events']}"
-                f" → 새 가설 {len(created)}개")
-    return _do("① 추출", go)
+    return _do("① 추출", _sense_and_draft)
 
 
 @app.post("/run/transcribe")
@@ -153,6 +157,114 @@ def run_transcribe(audio: UploadFile = File(...), hcp: str = Form(...), specialt
         return (f"{note['doc_id']} — {rec['duration_s']}초 → {len(rec['text'])}자 ({rec['model']}) · 동의 확인 {note['stt']['consent_by']}"
                 " → 개요에서 추출을 실행하면 이 면담도 집계된다")
     return _do("⓪ 음성 전사", go, "/notes")
+
+
+# ── ⓪ 현장 수집 — script (GitHub) → Chatterbox TTS → listen while Parakeet listens → field note ──
+
+def _script_or_none(sid: str) -> dict | None:
+    try:
+        return collect.get(sid)
+    except SystemExit:
+        return None
+
+
+@app.get("/collect", response_class=HTMLResponse)
+def collect_list():
+    return HTMLResponse(pages.collect_page(store.load(), store.contract(), _take_banner()))
+
+
+@app.get("/collect/scripts.json")
+def collect_scripts_json():
+    """The script list as data — declared before /collect/{sid} so the path is not read as an id."""
+    state, contract = store.load(), store.contract()
+    return JSONResponse(pages.collect_rows(state, contract))
+
+
+@app.get("/collect/{sid}", response_class=HTMLResponse)
+def collect_script(sid: str):
+    if not _script_or_none(sid):
+        return RedirectResponse("/collect", status_code=303)
+    return HTMLResponse(pages.collect_script_page(store.load(), store.contract(), sid, _take_banner()))
+
+
+@app.get("/collect/{sid}/audio.mp3")
+def collect_audio(sid: str):
+    """The one file the listener hears and STT hears. Only a valid script id, only the audio dirs."""
+    script = _script_or_none(sid)
+    a = collect.audio(script) if script else None
+    if not a:
+        return JSONResponse({"error": {"code": "NOT_FOUND", "message_ko": "음성이 없습니다."}}, status_code=404)
+    return FileResponse(a["path"], media_type="audio/mpeg", headers={"Cache-Control": "no-cache"})
+
+
+@app.post("/collect/{sid}/listen")
+def collect_listen(sid: str, mode: str = "live"):
+    if not _script_or_none(sid):
+        return JSONResponse({"error": {"code": "NOT_FOUND", "message_ko": f"대본이 없습니다: {sid[:40]}"}}, status_code=404)
+    try:
+        rec = collect.listen(sid, mode=mode)
+    except collect.ListenRefused as e:
+        return JSONResponse({"error": {"code": e.code, "message_ko": e.message_ko}}, status_code=409)
+    return JSONResponse({"ok": True, "mode": rec["mode"], "engine": rec["engine"]})
+
+
+@app.get("/collect/{sid}/listen.json")
+def collect_listen_json(sid: str):
+    rec = collect.live_read(sid) if _script_or_none(sid) else None
+    if rec is None:
+        return JSONResponse({"status": "NONE"})
+    return JSONResponse({k: rec.get(k) for k in ("status", "mode", "engine", "model", "finals", "interim", "elapsed_s",
+                                                  "duration_s", "text", "cer", "error", "updated_at")})
+
+
+@app.post("/run/collect/tts")
+def run_collect_tts(script: str = Form(...)):
+    def go():
+        s = collect.get(script)
+        if not collect.can_call_models():
+            raise SystemExit("음성을 만들려면 NVIDIA_API_KEY 가 필요합니다.")
+        a = collect.make_audio(s)
+        return f"{s['script_id']} 음성 {a['duration_s']}초 · {a['tts']['chunks']}조각 · {a['bytes'] // 1024} KB (Chatterbox Multilingual · ko-KR 남성)"
+    return _do("② 음성 만들기", go, f"/collect/{script}" if _script_or_none(script) else "/collect")
+
+
+@app.post("/run/collect/save")
+def run_collect_save(script: str = Form(...), consent_by: str = Form("")):
+    def go():
+        s = collect.get(script)
+        rec = collect.live_read(s["script_id"])
+        if not rec or rec["status"] != "DONE" or not rec.get("rec"):
+            raise SystemExit("STT가 받아 적은 글이 아직 없습니다 — 먼저 «재생하며 받아 적기»를 누르세요.")
+        note = collect.save(s, consent_by, rec["rec"], listen_mode=rec["mode"])
+        t = note["stt"]
+        return (f"{note['doc_id']} — {t['duration_s']}초 → {len(note['text'])}자 ({t['engine'].capitalize()}) · "
+                f"동의 확인 {t['consent_by']} → 다음: 추출")
+    return _do("⓪ 수집", go, f"/collect/{script}" if _script_or_none(script) else "/collect")
+
+
+@app.post("/run/collect/sense")
+def run_collect_sense():
+    return _do("① 추출", _sense_and_draft, "/collect#effect")
+
+
+@app.post("/run/collect/reset")
+def run_collect_reset():
+    def go():
+        r = collect.uncollect()
+        return (f"면담 기록 {len(r['notes'])}건 · 발언 카드 {r['claims']} · 유해사례 후보 {r['safety']} · "
+                f"가설 {len(r['hypotheses'])}개{' (' + ', '.join(r['hypotheses']) + ')' if r['hypotheses'] else ''}를 지웠다 — 원래 면담 기록은 그대로")
+    return _do("수집 되돌리기", go, "/collect")
+
+
+@app.post("/run/collect/verify")
+def run_collect_verify():
+    ko = {"same": "같음", "different": "다름", "missing": "GitHub에 아직 없음", "error": "확인 실패"}
+
+    def go():
+        r = collect.verify_github()
+        src = collect.source_info()
+        return f"{src['repo']} @ {src['ref'] or src['commit'][:7]} — " + " · ".join(f"{k} {ko[v]}" for k, v in r.items())
+    return _do("GitHub 원본과 대조", go, "/collect")
 
 
 @app.post("/run/screen")
@@ -204,5 +316,5 @@ def run_reset():
             p.unlink(missing_ok=True)
         for p in live.LIVE_DIR.glob("*.json") if live.LIVE_DIR.exists() else []:
             p.unlink(missing_ok=True)
-        return "결과를 지웠다 (캐시는 유지)"
+        return "결과를 지웠다 (캐시는 유지 · 수집한 면담 기록은 현장 수집의 «수집 되돌리기»로 지운다)"
     return _do("초기화", go)
