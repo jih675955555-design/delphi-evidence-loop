@@ -2,7 +2,8 @@
 Checks: STT entrance (cache replay, consent, no duplicates, provenance hidden from the model, word boost off by default),
 quote verification drops paraphrases, tally counts only verified claims, thresholds, gate order, action items,
 TTS chunking and caching, the collection stage (listen, save gates, effect, undo), and finally the committed collection
-bake replayed end to end with the real cache and no key, and .env as people edit it (a same-line comment is not
+bake replayed end to end with the real cache and no key (undo after 초기화 included), a model that stops answering
+(deadline, watchdog, the next listen not refused), and .env as people edit it (a same-line comment is not
 part of the value; a bad STT_BOOST is a reason on the page, never a 500)."""
 import json, os, re, sys
 from pathlib import Path
@@ -102,7 +103,7 @@ SAID = "PCOS 환자에게 메트포르민을 써봤는데 배란이 돌아온 �
 calls = []
 def fake_recognize(pcm, rate, terms, cfg, **kw):
     calls.append((len(pcm), rate, terms)); return SAID, [{"word": "PCOS", "start_ms": 0, "end_ms": 400, "confidence": 0.9}]
-stt._recognize = fake_recognize
+real_recognize, stt._recognize = stt._recognize, fake_recognize
 os.environ.pop("STT_BOOST", None)
 assert stt.settings("parakeet")["boost"] == 0.0, "word boosting must be off by default (it invented segment names)"
 rec = stt.transcribe(wav, contract)
@@ -136,6 +137,34 @@ segs = stt._segments(pcm, 16000)
 assert b"".join(segs) == pcm and all(len(s) <= 60 * 32000 for s in segs), "offline segments must be lossless and ≤ 60 s"
 assert abs(stt.cer("가나다라", "가나다라") - 0) < 1e-9 and abs(stt.cer("가 나, 다라.", "가나다마") - 0.25) < 1e-9, "CER ignores spaces and punctuation"
 print("stt:", note["doc_id"], rec["duration_s"], "s ·", len(rec["keyterms"]), "keyterms (boost off) · sense on transcript", st2)
+# a model that stops answering: every request carries a deadline, and a live listener is not re-streamed from 0 s
+import grpc, time, types
+import riva.client as riva_client
+class Deadline(grpc.RpcError):
+    def code(self): return grpc.StatusCode.DEADLINE_EXCEEDED
+    def details(self): return "Deadline Exceeded"
+class HungStub:   # takes the audio and never answers until its deadline — what NVCF did in 1 of 5 live runs
+    calls = []
+    def StreamingRecognize(self, requests, metadata=None, timeout=None):
+        HungStub.calls.append(("stream", timeout))
+        def responses():
+            time.sleep(timeout); raise Deadline()
+            yield
+        return responses()
+    def Recognize(self, request, metadata=None, timeout=None):
+        HungStub.calls.append(("offline", timeout)); raise Deadline()
+real_service, real_stall = stt._service, stt.STALL_S
+stt._service = lambda cfg: (riva_client, types.SimpleNamespace(stub=HungStub(), auth=types.SimpleNamespace(get_auth_metadata=lambda: [])))
+stt._recognize, stt.STALL_S = real_recognize, 0.3
+t_hang, cached_before = time.time(), set(stt.CACHE_DIR.glob("*.json"))
+for eng, pace_ in (("parakeet", 20), ("whisper", 0)):
+    try: stt.transcribe(wav, contract, force=True, engine=eng, on_partial=lambda f, i: None, pace=pace_); raise AssertionError(f"{eng}: a stalled request returned")
+    except stt.SttStalled as e: assert "멈췄습니다" in str(e) and "다시 누르면" in str(e), e
+assert HungStub.calls == [("stream", 3.0 / 20 + 0.3), ("offline", 3.0 + 0.3)], HungStub.calls   # one try each, a finite deadline
+assert time.time() - t_hang < 3, "a stall is not retried for a live listener"
+assert set(stt.CACHE_DIR.glob("*.json")) == cached_before, "a stalled request is never cached"
+stt._service, stt._recognize, stt.STALL_S = real_service, fake_recognize, real_stall
+print("stt stall: deadline", HungStub.calls, "→ SttStalled, no retry while someone is listening")
 
 # ── TTS: chunking, caching, truncation split (the network call is faked) ──
 import hashlib, shutil, threading
@@ -221,6 +250,35 @@ assert seen_status[0][0] == "RUNNING" and seen_status[-1][0] == "DONE" and lv["s
 grow = [n for st_, n in seen_status if st_ == "RUNNING"]
 assert grow == sorted(grow) and grow[-1] > grow[1], "replay reveals the transcript word by word"
 assert lv["text"] == HEARD and lv["cer"] == stt.cer(HEARD, fs1["text"]) and collect.live_read("FS-01")["rec"]["cache_key"] == fake_rec["cache_key"]
+# a live listen whose stream stalls: the record says ERROR with the reason, nothing stays «듣는 중», the next listen starts
+from loop import pages
+real_transcript, real_can, real_watchdog = collect.transcript, collect.can_call_models, collect.WATCHDOG_S
+release = threading.Event()
+def stalling_transcript(script, *, mode="cached", **kw):
+    if mode != "live": return real_transcript(script, mode=mode, **kw)
+    kw["on_partial"](["요양병원에 계신"], "여든")
+    if stalling_transcript.hang:   # a thread that never comes back, deadline or not — the watchdog's case
+        release.wait(); return fake_rec
+    raise stt.SttStalled("STT 응답이 멈췄습니다 — 시험. 다시 누르면 처음부터 듣습니다.")
+collect.transcript, collect.can_call_models, stalling_transcript.hang = stalling_transcript, (lambda: True), False
+lv_s = collect.listen("FS-01", mode="live", pace=0, background=False)
+assert lv_s["status"] == "ERROR" and "멈췄습니다" in lv_s["error"] and collect.busy() is None, lv_s
+stalling_transcript.hang, collect.WATCHDOG_S, stt.STALL_S = True, 0.2, 0.1
+collect.listen("FS-01", mode="live", pace=50, background=True)
+assert collect.busy() == "FS-01" and collect.live_read("FS-01")["status"] == "RUNNING"
+try: collect.listen("FS-02", mode="replay"); raise AssertionError("a second listen started while one runs")
+except collect.ListenRefused as e: assert e.code == "BUSY", e.code
+time.sleep(3.0 / 50 + 0.1 + 0.2 + 0.2)   # past the watchdog time: the thread is still stuck, the record is not
+stuck = collect.live_read("FS-01")
+assert collect._THREADS["FS-01"].is_alive() and stuck["status"] == "ERROR" and "멈췄습니다" in stuck["error"] and collect.busy() is None, stuck
+html = pages.collect_script_page(store.load(), contract, "FS-01")
+assert "이전 듣기가 중단됐다 — STT 응답이 멈췄습니다" in html and 'data-listen="replay"' in html and "RUNNING=false" in html
+again = collect.listen("FS-01", mode="replay", pace=0, background=False)
+assert again["status"] == "DONE" and again["mode"] == "replay"
+release.set(); collect._THREADS["FS-01"].join(5)
+assert not collect._THREADS["FS-01"].is_alive() and collect.live_read("FS-01")["mode"] == "replay", "a late write from the stuck thread is dropped"
+collect.transcript, collect.can_call_models, collect.WATCHDOG_S, stt.STALL_S = real_transcript, real_can, real_watchdog, real_stall
+print("collect stall: deadline → ERROR · stuck thread → watchdog ERROR, BUSY released, page offers replay, late write dropped")
 notes_c = tmp / "field_notes_collect.json"; shutil.copy(store.FIELD_NOTES, notes_c)
 real_notes, store.FIELD_NOTES = store.FIELD_NOTES, notes_c
 original_bytes = notes_c.read_bytes()
@@ -262,9 +320,15 @@ store.save(signed)
 try: collect.uncollect(); raise AssertionError("undo deleted a signed hypothesis")
 except SystemExit as e: print("undo refusal ok:", e)
 assert json.loads(notes_c.read_text())[-1]["doc_id"] == cn["doc_id"], "a refused undo changes nothing"
+orig_hyp = {"id": "HYP-002", "segment": "PCOS 여성", "signal_type": "OFF_LABEL_USE", "field": {"claim_ids": ["C1"]}, "status": "SCREENED"}
+store.save({**signed, "reviews": {}, "hypotheses": [eff_state["hypotheses"][0], orig_hyp], "screens": {"HYP-002": {}}})
+try: collect.uncollect(); raise AssertionError("undo renumbered a screened hypothesis")
+except SystemExit as e:
+    assert "HYP-002 은(는) 원래 면담에서 나온 가설" in str(e) and "«초기화»를 누른 뒤" in str(e) and "«수집 되돌리기»를 한 번 더" in str(e), e
+assert notes_c.read_bytes() != original_bytes and len(store.load()["hypotheses"]) == 2, "a refused undo changes nothing"
 store.save({**signed, "reviews": {}, "hypotheses": [eff_state["hypotheses"][0]], "screens": {"HYP-001": {}}})
 u = collect.uncollect()
-assert u == {"notes": [cn["doc_id"]], "claims": 3, "safety": 1, "hypotheses": ["HYP-001"]}, u
+assert u == {"notes": [cn["doc_id"]], "claims": 3, "safety": 1, "hypotheses": ["HYP-001"], "renumbered": {}}, u
 assert notes_c.read_bytes() == original_bytes, "undo must leave the notes file byte-identical"
 left = store.load()
 assert [c["id"] for c in left["claims"]] == ["C1", "C2", "C3"] and not left["safety_queue"] and not left["hypotheses"] and not left["screens"]
@@ -311,6 +375,37 @@ for label in ("committed_state", "fresh_state"):
     if label == "fresh_state":
         assert ("PCOS 여성", "OFF_LABEL_USE") in {(h["segment"], h["signal_type"]) for h in made}
     print(f"collect replay ({label}):", got, "→", [(h["id"], h["segment"], h["signal_type"], h["field"]["mentions"], h["field"]["hcps"]) for h in made])
+# undo after 초기화: one extraction drafted the collected group first (HYP-001) and PCOS from the original notes
+# after it (HYP-002). Undo removes HYP-001 and moves PCOS up — the same hypothesis a clean extraction gives.
+st_u = store.load()
+assert [h["id"] for h in st_u["hypotheses"]] == ["HYP-001", "HYP-002"] and st_u["hypotheses"][1]["segment"] == "PCOS 여성", st_u["hypotheses"]
+pcos_before = st_u["hypotheses"][1]
+u_all = collect.uncollect()
+assert u_all["hypotheses"] == ["HYP-001"] and u_all["renumbered"] == {"HYP-002": "HYP-001"} and len(u_all["notes"]) == 4, u_all
+assert store.FIELD_NOTES.read_bytes() == real_notes.read_bytes(), "undo leaves the notes file byte-identical"
+clean_state = json.loads(json.dumps(store.EMPTY)); real_state_path = store.STATE
+store.STATE = tmp / "state_clean.json"
+sense.run(clean_state, contract, json.loads(real_notes.read_text()))
+clean_made = sense.draft_hypotheses(clean_state, contract, contract["threshold"]["min_mentions"], contract["threshold"]["min_hcps"])
+store.STATE = real_state_path
+st_u = store.load()
+strip_t = lambda h: {k: v for k, v in h.items() if k != "created_at"}   # noqa: E731
+assert [strip_t(h) for h in st_u["hypotheses"]] == [strip_t(h) for h in clean_made] == [{**strip_t(pcos_before), "id": "HYP-001"}], "undo = extraction without the collection"
+strip_c = lambda cs: [{k: v for k, v in c.items() if k != "extracted_at"} for c in cs]   # noqa: E731
+assert strip_c(st_u["claims"]) == strip_c(clean_state["claims"]) and strip_c(st_u["safety_queue"]) == strip_c(clean_state["safety_queue"])
+# the evaluator's path: 초기화 → FS-01 alone → ① 추출 → «수집 되돌리기» → ① 추출 again finds nothing new
+store.STATE.unlink()
+lv1 = collect.listen("FS-01", mode="replay", pace=0, background=False)
+collect.save(scripts[0], "셀프테스트", lv1["rec"], listen_mode="replay")
+st_1 = store.load(); sense.run(st_1, contract, json.loads(store.FIELD_NOTES.read_text()))
+made_1 = sense.draft_hypotheses(st_1, contract, contract["threshold"]["min_mentions"], contract["threshold"]["min_hcps"])
+assert [(h["id"], h["segment"]) for h in made_1] == [("HYP-001", "노인 65+ · 신기능 저하"), ("HYP-002", "PCOS 여성")], made_1
+u_1 = collect.uncollect()
+assert u_1["renumbered"] == {"HYP-002": "HYP-001"} and store.FIELD_NOTES.read_bytes() == real_notes.read_bytes(), u_1
+st_1 = store.load(); sense.run(st_1, contract, json.loads(store.FIELD_NOTES.read_text()))
+assert sense.draft_hypotheses(st_1, contract, contract["threshold"]["min_mentions"], contract["threshold"]["min_hcps"]) == []
+assert [strip_t(h) for h in st_1["hypotheses"]] == [strip_t(h) for h in clean_made]
+print("collect undo after 초기화:", u_all, "· FS-01 alone:", u_1["hypotheses"], u_1["renumbered"], "→ same as a clean extraction")
 assert set(os.listdir(llm.CACHE_DIR)) == cache_before, "replay must not create model outputs"
 
 # ── web: the audio file, the refusals, and the console API seeing the new hypothesis ──

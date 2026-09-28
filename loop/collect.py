@@ -18,12 +18,13 @@ Two storage layers:
 
 Guards: a script is collected once (script_id), a recording once (audio hash, in stt.add_note), and the note text
 is exactly the transcript the listener saw. «수집 되돌리기» removes only what collection added, and refuses once a
-person has signed anything derived from it.
+person has signed anything derived from it (uncollect() says how it keeps hypothesis ids sequential).
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -268,6 +269,8 @@ def transcript(script: dict, *, engine: str = "parakeet", mode: str = "cached", 
 
 _LOCK = threading.Lock()
 _THREADS: dict[str, threading.Thread] = {}
+_RUNS: dict[str, str] = {}   # sid → the listen that owns its live file; a thread that wakes up late writes nothing
+WATCHDOG_S = 10.0            # past the STT deadline: a RUNNING record this old no longer counts as listening
 
 
 def _live_path(sid: str) -> Path:
@@ -275,6 +278,8 @@ def _live_path(sid: str) -> Path:
 
 
 def _write_live(sid: str, rec: dict) -> None:
+    if rec.get("run") and _RUNS.get(sid) not in (None, rec["run"]):
+        return   # a newer listen started after this one was given up — its file is not ours any more
     p = _live_path(sid)
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix(".tmp")
@@ -282,23 +287,38 @@ def _write_live(sid: str, rec: dict) -> None:
     tmp.replace(p)   # atomic on POSIX — a poll never reads half a file
 
 
-def busy() -> str | None:
-    """The script being listened to in this process right now, if any."""
-    return next((sid for sid, t in list(_THREADS.items()) if t.is_alive()), None)
+def _overdue(rec: dict | None) -> bool:
+    """A RUNNING record past its watchdog time. The STT deadline normally ends the thread first; this is the backstop
+    for a thread that never returns — it must not keep the page «듣는 중» and every other script refused."""
+    return bool(rec and rec.get("status") == "RUNNING" and time.time() > rec.get("watchdog_at", math.inf))
 
 
-def live_read(sid: str) -> dict | None:
+def _read(sid: str) -> dict | None:
     p = _live_path(sid)
     if not p.exists():
         return None
     try:
-        rec = json.loads(p.read_text())
+        return json.loads(p.read_text())
     except ValueError:
+        return None
+
+
+def busy() -> str | None:
+    """The script being listened to in this process right now, if any. A thread past its watchdog time does not count."""
+    return next((sid for sid, t in list(_THREADS.items()) if t.is_alive() and not _overdue(_read(sid))), None)
+
+
+def live_read(sid: str) -> dict | None:
+    rec = _read(sid)
+    if rec is None:
         return None
     t = _THREADS.get(sid)
     if rec.get("status") == "RUNNING" and not (t and t.is_alive()):
         # written by a thread that is gone (server restarted) — say so, and let the button start again
         rec = {**rec, "status": "ERROR", "error": "듣기가 중간에 끊겼습니다 (서버 재시작) — 다시 누르면 처음부터 듣는다."}
+    elif _overdue(rec):
+        rec = {**rec, "status": "ERROR", "error": "STT 응답이 멈췄습니다 — 음성이 끝나고도 결과가 오지 않아 이 듣기를 포기했습니다. "
+                                                   "다시 누르면 처음부터 듣습니다."}
     return rec
 
 
@@ -351,18 +371,22 @@ def _run(script: dict, a: dict, live: dict, rec: dict | None, engine: str, pace:
             raise SystemExit("전사한 음성과 재생한 음성의 해시가 다릅니다.")
         live.update(status="DONE", finals=[rec["text"]], interim="", text=rec["text"], cer=stt.cer(rec["text"], script["text"]),
                     rec=rec, elapsed_s=round(time.time() - t0, 2), updated_at=store.now())
-    except SystemExit as e:
+    except (SystemExit, stt.SttUnavailable) as e:   # a refusal or a stall carries its own Korean reason
         live.update(status="ERROR", error=str(e), updated_at=store.now())
     except Exception as e:  # noqa: BLE001 — shown on the page, never swallowed silently
         traceback.print_exc()
-        live.update(status="ERROR", error=f"{type(e).__name__}: {str(e)[:300]}", updated_at=store.now())
+        code = getattr(e, "code", None)   # a gRPC error: its status and details, not the whole debug string
+        reason = (f"STT 호출 실패 — {code().name}: {(e.details() or '')[:200]}" if callable(code) and callable(getattr(e, "details", None))
+                  else f"{type(e).__name__}: {str(e)[:300]}")
+        live.update(status="ERROR", error=reason, updated_at=store.now())
     _write_live(sid, live)
 
 
 def listen(sid: str, *, mode: str = "live", engine: str = "parakeet", pace: float = 1.0, background: bool = True) -> dict:
     """Start listening to one script's audio. live: Parakeet streams the same MP3 at `pace`× real time and the
     interim text goes to the live file. replay: the saved transcript is revealed by its word times — no model call.
-    One listen at a time per process."""
+    One listen at a time per process. A listen that outlives its STT deadline plus WATCHDOG_S stops counting, so a
+    stalled stream never blocks the next one (and whatever it writes afterwards is dropped)."""
     script = get(sid)
     if mode not in ("live", "replay"):
         raise ListenRefused("BAD_MODE", f"듣기 방식은 live 또는 replay 입니다: {mode!r}")
@@ -384,10 +408,13 @@ def listen(sid: str, *, mode: str = "live", engine: str = "parakeet", pace: floa
         elif not can_call_models():
             raise ListenRefused("NO_KEY", "실시간으로 들으려면 NVIDIA_API_KEY 가 필요합니다 — 저장된 전사로 재생할 수 있습니다.")
         cfg = stt.settings(engine)
-        live = {"script_id": sid, "status": "RUNNING", "mode": mode, "engine": cfg["engine"], "model": cfg["model"],
+        run = f"{time.time_ns():x}"
+        _RUNS[sid] = run
+        live = {"script_id": sid, "run": run, "status": "RUNNING", "mode": mode, "engine": cfg["engine"], "model": cfg["model"],
                 "boost": cfg["boost"], "started_at": store.now(), "updated_at": store.now(), "audio_sha256": a["audio_sha256"],
                 "duration_s": a["duration_s"], "finals": [], "interim": "", "elapsed_s": 0.0, "text": "", "cer": None,
-                "rec": None, "error": None}
+                "rec": None, "error": None,
+                "watchdog_at": time.time() + stt.deadline_s(a["duration_s"], pace) + WATCHDOG_S}
         _write_live(sid, live)
         if background:
             t = threading.Thread(target=_run, args=(script, a, live, rec, engine, pace), daemon=True, name=f"listen-{sid}")
@@ -456,35 +483,64 @@ def effect(state: dict, contract: dict, notes: list[dict]) -> dict:
 
 def uncollect() -> dict:
     """Undo collection for the next viewer: the script-collected notes and only what was derived from them.
-    Refuses once a person has signed a derived hypothesis — a convenience button never deletes a signature."""
+    Refuses once a person has signed a derived hypothesis — a convenience button never deletes a signature.
+
+    Hypothesis ids are sequential (count + 1), and one extraction can draft a collected group and an original one
+    together: after 초기화, FS-01 → ① 추출 drafts 노인 × DOSING (7/3, from the collection) as HYP-001 and PCOS (6/4,
+    from the original notes) as HYP-002, because the tally lists the larger group first. Removing only HYP-001 would
+    let the next draft reuse HYP-002. So the hypotheses drafted after the first derived one that are not derived
+    themselves move up to close the gap. Their drafting input is the tally row and its quotes — no id, no collected
+    claim — so the result is exactly what extraction without the collection gives, with no model call. This is
+    refused only when one of them already carries its id in another record (a screen, a signature, a meeting)."""
+    from . import runner   # local: runner pulls in the board and the screen, which collection otherwise never needs
     state = store.load()
     notes = json.loads(store.FIELD_NOTES.read_text())
     docs = {n["doc_id"] for n in notes if (n.get("stt") or {}).get("script_id")}
     if not docs:
         raise SystemExit("되돌릴 수집이 없습니다 — 대본에서 수집한 면담 기록이 없습니다.")
+    if runner.SCREENING:   # it saves the whole state when it ends and would put back what this removes
+        raise SystemExit(f"{', '.join(sorted(runner.SCREENING))} 근거 교차검증이 진행 중입니다 — 끝난 뒤에 다시 누르세요.")
     ids = {c["id"] for c in state["claims"] + state["safety_queue"] if c["doc_id"] in docs}
-    derived = [h for h in state["hypotheses"] if set(h["field"]["claim_ids"]) & ids]
-    signed = [h["id"] for h in derived if h["status"] not in ("DRAFT", "SCREENED") or h["id"] in state["reviews"] or h["id"] in state["board"]]
+    hyps = state["hypotheses"]
+    derived = [h for h in hyps if set(h["field"]["claim_ids"]) & ids]
+
+    def recorded(h: dict) -> bool:   # another record holds this id: a signature, a meeting, a checklist question
+        return h["id"] in state["reviews"] or h["id"] in state["board"] or any(a.get("hypothesis_id") == h["id"] for a in state["actions"])
+    signed = [h["id"] for h in derived if h["status"] not in ("DRAFT", "SCREENED") or recorded(h)]
     if signed:
         raise SystemExit(f"{', '.join(signed)} 에 사람의 서명이 있어 되돌리지 않습니다 — 서명된 기록은 지우지 않습니다.")
     gone = {h["id"] for h in derived}
-    tail = [h["id"] for h in state["hypotheses"][len(state["hypotheses"]) - len(gone):]] if gone else []
-    if set(tail) != gone:
-        # ids are sequential (count + 1): removing one from the middle would let the next draft reuse a live id
-        raise SystemExit("수집 뒤에 다른 가설이 더 생겨 번호가 꼬입니다 — 결과 전체 초기화(개요 · 초기화)를 쓰세요.")
+    first = next((i for i, h in enumerate(hyps) if h["id"] in gone), len(hyps))
+    later = [h for h in hyps[first:] if h["id"] not in gone]   # drafted after a collected one, not from it
+    fixed = [h["id"] for h in later if h["status"] != "DRAFT" or h["id"] in state["screens"] or recorded(h)]
+    if fixed:
+        raise SystemExit(
+            f"{', '.join(fixed)} 은(는) 원래 면담에서 나온 가설인데, 같은 추출에서 수집으로 생긴 {', '.join(sorted(gone))} 뒤 번호를 받았고 "
+            "이미 근거 교차검증이나 서명을 거쳤습니다. 수집 가설만 지우면 다음 초안이 번호를 다시 쓰고, 번호를 당기면 그 기록과 어긋나므로 되돌리지 않습니다. "
+            "처음부터 다시 하려면 개요의 «초기화»를 누른 뒤, 여기서 «수집 되돌리기»를 한 번 더 누릅니다 "
+            "(초기화는 결과만 지우고, 수집한 면담 기록은 이 버튼이 지웁니다).")
+    kept, renumbered = list(hyps[:first]), {}
+    for h in later:
+        new = f"HYP-{len(kept) + 1:03d}"   # the id draft_hypotheses gives it when the collected ones never existed
+        if any(k["id"] == new for k in kept):
+            raise SystemExit("가설 번호가 순서대로가 아니라 당길 수 없습니다 — 개요의 «초기화»를 누른 뒤 «수집 되돌리기»를 한 번 더 누릅니다.")
+        if new != h["id"]:
+            renumbered[h["id"]] = new
+        kept.append({**h, "id": new})
     removed = stt.remove_notes(docs)
     n_claims = sum(1 for c in state["claims"] if c["doc_id"] in docs)
     n_safety = sum(1 for c in state["safety_queue"] if c["doc_id"] in docs)
     state["claims"] = [c for c in state["claims"] if c["doc_id"] not in docs]
     state["safety_queue"] = [c for c in state["safety_queue"] if c["doc_id"] not in docs]
-    state["hypotheses"] = [h for h in state["hypotheses"] if h["id"] not in gone]
+    state["hypotheses"] = kept
     for hid in gone:
         state["screens"].pop(hid, None)
     store.save(state)
     for d in (RUNTIME_DIR / "live", RUNTIME_DIR / "audio"):
         for p in d.glob("*") if d.exists() else []:
             p.unlink(missing_ok=True)
-    return {"notes": sorted(n["doc_id"] for n in removed), "claims": n_claims, "safety": n_safety, "hypotheses": sorted(gone)}
+    return {"notes": sorted(n["doc_id"] for n in removed), "claims": n_claims, "safety": n_safety, "hypotheses": sorted(gone),
+            "renumbered": renumbered}
 
 
 def verify_github() -> dict[str, str]:

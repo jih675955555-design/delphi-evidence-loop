@@ -21,7 +21,7 @@ uv run python -m loop.cli transcribe <audio> --hcp <ref> --specialty <text> --da
                                                 # interview audio → Parakeet multilingual (ko-KR) or Whisper transcript → one field note
 uv run python -m loop.cli scripts               # synthetic interview scripts in data/field_scripts/ with their intent and the current count
 uv run python -m loop.cli collect FS-01 --consent-by "<name>"   # script → Chatterbox TTS → Parakeet transcript (CER vs script) → one field note
-uv run python -m loop.cli uncollect             # undo: only script-collected notes and what was derived from them; refuses after a signature
+uv run python -m loop.cli uncollect             # undo: only script-collected notes and what was derived from them (original-note hypotheses drafted after them move up one id); refuses after a signature
 uv run python -m loop.cli sense                 # field notes → claims (verbatim quotes verified by code) → hypotheses over threshold
 uv run python -m loop.cli hypotheses
 uv run python -m loop.cli screen HYP-001        # 3 agents (PubMed / CT.gov / label) + FAERS and Part D numbers

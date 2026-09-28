@@ -251,8 +251,10 @@ def run_collect_sense():
 def run_collect_reset():
     def go():
         r = collect.uncollect()
+        moved = " · ".join(f"{a} → {b}" for a, b in r["renumbered"].items())
         return (f"면담 기록 {len(r['notes'])}건 · 발언 카드 {r['claims']} · 유해사례 후보 {r['safety']} · "
-                f"가설 {len(r['hypotheses'])}개{' (' + ', '.join(r['hypotheses']) + ')' if r['hypotheses'] else ''}를 지웠다 — 원래 면담 기록은 그대로")
+                f"가설 {len(r['hypotheses'])}개{' (' + ', '.join(r['hypotheses']) + ')' if r['hypotheses'] else ''}를 지웠다 — 원래 면담 기록은 그대로"
+                + (f" · 원래 면담에서 나온 가설은 번호만 당겼다 ({moved})" if moved else ""))
     return _do("수집 되돌리기", go, "/collect")
 
 

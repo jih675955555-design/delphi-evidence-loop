@@ -748,28 +748,38 @@ def miss_marks(hyp: str, ref: str) -> str:
 
 COLLECT_JS = """<script>
 (function(){
-const SID=%(sid)s, LABEL=%(labels)s, RUNNING=%(running)s;
+const SID=%(sid)s, LABEL=%(labels)s, RUNNING=%(running)s, BACKSTOP_MS=%(backstop_ms)s;
 const audio=document.getElementById('player'), heard=document.getElementById('heard'), st=document.getElementById('lstatus');
 const btns=[...document.querySelectorAll('[data-listen]')];
-let reloading=false;
+let reloading=false, gen=0, endedAt=0, lastSig='', lastChange=Date.now(), gaveUp=false;
+if(audio)audio.addEventListener('ended',()=>{endedAt=Date.now();});
 function say(msg,dot){if(!st)return;st.textContent='';if(dot){const d=document.createElement('span');d.className='dot';st.appendChild(d);}st.appendChild(document.createTextNode(msg||''));}
 function enable(on){btns.forEach(b=>{b.disabled=!on;});}
 function render(j){heard.textContent='';const f=document.createElement('span');f.textContent=(j.finals||[]).join(' ');heard.appendChild(f);
 const i=document.createElement('span');i.className='interim'+(j.status==='RUNNING'?' caret':'');i.textContent=j.interim?((f.textContent?' ':'')+j.interim):'';heard.appendChild(i);}
 function reload(){if(reloading)return;reloading=true;setTimeout(()=>location.reload(),1200);}
-async function poll(){let j;try{const r=await fetch('/collect/'+SID+'/listen.json',{cache:'no-store'});j=await r.json();}catch(e){say('연결 재시도 중',true);setTimeout(poll,1000);return;}
-if(j.status==='RUNNING'){render(j);say(LABEL[j.mode]||'',true);setTimeout(poll,300);return;}
+// the server cuts a stalled stream at its deadline and gives up a stuck one at its watchdog time, then says ERROR;
+// this is only the backstop for when that answer never comes (both limits are past the server's own)
+function stalled(j){const sig=(j.updated_at||'')+'|'+(j.finals||[]).join(' ').length+'|'+(j.interim||'').length,now=Date.now();
+if(sig!==lastSig){lastSig=sig;lastChange=now;}return (endedAt&&now-endedAt>BACKSTOP_MS)||now-lastChange>(j.duration_s||0)*1000+BACKSTOP_MS;}
+async function poll(g){if(g!==gen)return;let j;try{const r=await fetch('/collect/'+SID+'/listen.json',{cache:'no-store'});j=await r.json();}catch(e){say('연결 재시도 중',true);setTimeout(()=>poll(g),1000);return;}
+if(g!==gen)return;
+if(j.status==='RUNNING'){render(j);
+if(stalled(j)){if(!gaveUp){gaveUp=true;say('STT 응답이 멈춘 것 같습니다 — 음성이 끝났는데 결과가 오지 않습니다. 다시 누르면 처음부터 듣습니다.',false);enable(true);}
+setTimeout(()=>poll(g),2000);return;}
+say(LABEL[j.mode]||'',true);setTimeout(()=>poll(g),300);return;}
 if(j.status==='DONE'){render(j);say('받아 적기 끝 — 대본과 비교하는 중',true);
 if(audio&&!audio.paused&&!audio.ended){audio.addEventListener('ended',reload,{once:true});setTimeout(reload,Math.max(0,(audio.duration||0)-audio.currentTime)*1000+1500);}else{reload();}return;}
 if(j.status==='ERROR'){say('듣기 중단 — '+(j.error||''),false);if(audio)audio.pause();enable(true);return;}
 enable(true);}
-btns.forEach(b=>b.addEventListener('click',async()=>{const mode=b.dataset.listen;enable(false);heard.textContent='';
+btns.forEach(b=>b.addEventListener('click',async()=>{const mode=b.dataset.listen;const g=++gen;enable(false);heard.textContent='';
+endedAt=0;lastSig='';lastChange=Date.now();gaveUp=false;
 say(mode==='live'?'STT에 연결하는 중':'저장된 전사를 여는 중',true);
 if(audio){try{audio.currentTime=0;}catch(e){}const p=audio.play();if(p&&p.catch)p.catch(()=>say('브라우저가 자동 재생을 막았습니다 — 플레이어의 ▶를 눌러 주세요',false));}
 let r,j;try{r=await fetch('/collect/'+SID+'/listen?mode='+mode,{method:'POST'});j=await r.json();}catch(e){r={ok:false};j={error:{message_ko:'서버에 연결하지 못했습니다'}};}
 if(!r.ok){say((j.error&&j.error.message_ko)||'시작하지 못했습니다',false);if(audio)audio.pause();enable(true);return;}
-say(LABEL[mode],true);poll();}));
-if(RUNNING){enable(false);poll();}
+say(LABEL[mode],true);poll(g);}));
+if(RUNNING){enable(false);poll(gen);}
 })();
 </script>"""
 
@@ -891,6 +901,7 @@ def collect_script_page(state: dict, contract: dict, sid: str, banner: str = "")
     intent = (f'<div class="card"><b>작성 의도</b> <span class="faint">— 대본을 쓴 사람의 설계 메모. 면담 기록에도, 추출 모델에도 들어가지 않는다.</span>'
               f'<div style="margin-top:6px">{esc(it["segment"])} × {signal(it["signal_type"])} · {tag("pattern")}지금 집계 {cur["mentions"]}회/{cur["hcps"]}인 '
               f'<span class="faint">(문턱 {thr["min_mentions"]}회·{thr["min_hcps"]}인, 코드)</span></div><div class="sub" style="margin-top:4px">{esc(it["why_ko"])}</div></div>')
-    js = COLLECT_JS % {"sid": json.dumps(sid), "labels": json.dumps(labels, ensure_ascii=False), "running": json.dumps(running)}
+    js = COLLECT_JS % {"sid": json.dumps(sid), "labels": json.dumps(labels, ensure_ascii=False), "running": json.dumps(running),
+                       "backstop_ms": int((stt.STALL_S + collect.WATCHDOG_S + 5) * 1000)}
     body = head + strip + _stt_problem_card(stt_err) + audio_card + listen_bar + texts + result + gate + intent
     return shell(f"{sid} 현장 수집", body, "/collect", banner, band=band(state), script=js)

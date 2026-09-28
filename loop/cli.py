@@ -75,6 +75,8 @@ def cmd_collect(args):
 def cmd_uncollect(args):
     r = collect.uncollect()
     print(f"[실행] 면담 기록 {len(r['notes'])}건 {r['notes']} · 발언 카드 {r['claims']} · 유해사례 후보 {r['safety']} · 가설 {r['hypotheses']} 을 지웠습니다")
+    for a, b in r["renumbered"].items():
+        print(f"[실행] {a} → {b} — 원래 면담에서 나온 가설, 수집 가설 뒤에 만들어져 번호만 당겼습니다 (내용은 그대로)")
 
 
 def cmd_tts_voices(args):

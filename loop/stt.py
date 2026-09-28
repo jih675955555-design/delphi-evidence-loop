@@ -25,6 +25,11 @@ build.nvidia.com's nemotron-asr-streaming is English-only, so it is not an optio
 Which model answers is decided by the NVCF function id. The defaults below are the public hosted deployments;
 NVIDIA changes an id when it redeploys a model, so STT_FUNCTION_ID_PARAKEET / STT_FUNCTION_ID_WHISPER override them.
 `uv run python -m loop.cli stt-models` lists what the function actually serves (look for ko-KR).
+
+Every request has a deadline: the audio's own length at the feeding pace plus STALL_S. Seen on 2026-09-28 (1 of 5
+live runs): the NVCF stream stopped answering near the end of a clip and never closed — without a deadline the
+listening thread waited in gRPC forever and the collection page stayed «듣는 중». A stall raises SttStalled; a live
+listener (on_partial set) is not re-streamed from 0 s, because the audio in the browser has already moved on.
 """
 from __future__ import annotations
 
@@ -48,6 +53,7 @@ CACHE_DIR = ROOT / "data" / "stt_cache"
 RUNS_LOG = ROOT / "data" / "stt_runs.jsonl"
 CHUNK_SECONDS = 0.2     # streaming chunk size
 SEGMENT_SECONDS = 60    # offline requests stay well under gRPC's 4 MB message limit (60 s of 16 kHz PCM ≈ 1.9 MB)
+STALL_S = 20.0          # a request still open this long after its audio ran out is cut off (normal: final ≤ 1.3 s after)
 
 ENGINES = {   # "boost": the engine *can* take word boosting — it is still off unless STT_BOOST > 0 (see above)
     "parakeet": {"model": "nvidia/parakeet-1.1b-rnnt-multilingual-asr", "function_id": "71203149-d3b7-4460-8231-1be2543a1fca",
@@ -59,6 +65,15 @@ ENGINES = {   # "boost": the engine *can* take word boosting — it is still off
 
 class SttUnavailable(RuntimeError):
     pass
+
+
+class SttStalled(SttUnavailable):
+    """The model stopped answering and the request hit its deadline."""
+
+
+def deadline_s(seconds: float, pace: float = 0.0) -> float:
+    """How long one request may stay open: the audio at the feeding pace (unpaced: its length) plus STALL_S."""
+    return (seconds / pace if pace > 0 else seconds) + STALL_S
 
 
 def _boost() -> float:
@@ -159,16 +174,17 @@ def transcribe(src: Path, contract: dict, force: bool = False, engine: str | Non
 
     pcm, rate, seconds = _pcm(to_pcm_wav(src))
     text = words = None
-    for attempt in range(4):   # the free endpoint rate-limits bursts
+    # the free endpoint rate-limits bursts, so retry — except for a live listener: a second stream would start
+    # from 0 s while the audio in the browser is already further on, and the page would show the wrong text
+    tries = 1 if on_partial is not None else 4
+    for attempt in range(tries):
         try:
             text, words = _recognize(pcm, rate, terms, cfg, on_partial=on_partial, pace=pace)
             if not text.strip():
                 raise ValueError("전사 결과가 비어 있습니다 — 무음이거나 지원하지 않는 언어일 수 있습니다")
             break
-        except SttUnavailable:
-            raise
-        except Exception as e:  # noqa: BLE001 — UNAVAILABLE / RESOURCE_EXHAUSTED from gRPC, or an empty result
-            if attempt == 3:
+        except Exception as e:  # noqa: BLE001 — UNAVAILABLE / RESOURCE_EXHAUSTED / a stall from gRPC, or an empty result
+            if attempt == tries - 1 or (isinstance(e, SttUnavailable) and not isinstance(e, SttStalled)):
                 raise
             _log(model=cfg["model"], key=key, retry=attempt + 1, reason=f"{type(e).__name__}: {str(e)[:120]}")
             time.sleep(5 * (attempt + 1))
@@ -200,32 +216,47 @@ def _recognize(pcm: bytes, rate: int, terms: list[str], cfg: dict, *, on_partial
     )
     if terms:
         riva.add_word_boosting_to_config(config, terms, cfg["boost"])
-    if cfg["mode"] == "offline":   # nothing to show while it runs — one callback at the end
-        results = [r for seg in _segments(pcm, rate) for r in asr.offline_recognize(seg, config).results]
-    else:
-        step = int(rate * CHUNK_SECONDS) * 2
+    import grpc  # lazy, like riva: replaying from cache needs no gRPC stack
+    seconds = len(pcm) / 2 / rate
+    limit = deadline_s(seconds, pace)
+    try:
+        # the stubs are called directly: riva's helpers take no deadline, and a request without one can hang forever
+        if cfg["mode"] == "offline":   # nothing to show while it runs — one callback at the end
+            results = []
+            for seg in _segments(pcm, rate):
+                req = riva.proto.riva_asr_pb2.RecognizeRequest(config=config, audio=seg)
+                resp = asr.stub.Recognize(req, metadata=asr.auth.get_auth_metadata(), timeout=deadline_s(len(seg) / 2 / rate))
+                results += list(resp.results)
+        else:
+            step = int(rate * CHUNK_SECONDS) * 2
 
-        def chunks():
-            for i in range(0, len(pcm), step):
-                if pace > 0:
-                    wait = t0 + i / 2 / rate / pace - time.time()
-                    if wait > 0:
-                        time.sleep(wait)
-                yield pcm[i:i + step]
-        results, finals = [], []
-        for resp in asr.streaming_response_generator(
-                chunks(), riva.StreamingRecognitionConfig(config=config, interim_results=on_partial is not None)):
-            interim = []
-            for r in resp.results:
-                if not r.alternatives:
-                    continue
-                if r.is_final:
-                    results.append(r)
-                    finals.append(r.alternatives[0].transcript.strip())
-                else:
-                    interim.append(r.alternatives[0].transcript.strip())
-            if on_partial is not None:
-                on_partial([f for f in finals if f], " ".join(t for t in interim if t))
+            def chunks():
+                for i in range(0, len(pcm), step):
+                    if pace > 0:
+                        wait = t0 + i / 2 / rate / pace - time.time()
+                        if wait > 0:
+                            time.sleep(wait)
+                    yield pcm[i:i + step]
+            results, finals = [], []
+            scfg = riva.StreamingRecognitionConfig(config=config, interim_results=on_partial is not None)
+            for resp in asr.stub.StreamingRecognize(riva.asr.streaming_request_generator(chunks(), scfg),
+                                                    metadata=asr.auth.get_auth_metadata(), timeout=limit):
+                interim = []
+                for r in resp.results:
+                    if not r.alternatives:
+                        continue
+                    if r.is_final:
+                        results.append(r)
+                        finals.append(r.alternatives[0].transcript.strip())
+                    else:
+                        interim.append(r.alternatives[0].transcript.strip())
+                if on_partial is not None:
+                    on_partial([f for f in finals if f], " ".join(t for t in interim if t))
+    except grpc.RpcError as e:
+        if callable(getattr(e, "code", None)) and e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+            raise SttStalled(f"STT 응답이 멈췄습니다 — 음성 {seconds:.1f}초를 보내고 {STALL_S:.0f}초를 더 기다려도 끝나지 않아 끊었습니다. "
+                             "다시 누르면 처음부터 듣습니다.") from e
+        raise
     texts, words = [], []
     for r in results:
         if not r.alternatives:

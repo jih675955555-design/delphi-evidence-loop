@@ -55,6 +55,7 @@ ENGINE = {"model": "resembleai/chatterbox-multilingual-tts", "function_id": "dda
 MAX_CHUNK_CHARS = 110   # ≤ 12.4 s of speech per request, well under the ~20 s cap
 LEAD_S, GAP_S, TAIL_S = 0.4, 0.25, 0.3
 MAX_SPLIT_DEPTH = 2
+TIMEOUT_S = 60          # one piece takes about 5 s; a request still open after this is cut off (DEADLINE) and retried
 
 
 class TtsUnavailable(RuntimeError):
@@ -207,9 +208,15 @@ def _service(cfg: dict):
 
 def _synth_chunk(text: str, cfg: dict) -> bytes:
     """Raw 16-bit mono PCM for one short piece — the only function here that touches the network."""
+    import grpc
     _, tts = _service(cfg)
-    resp = tts.synthesize(text, voice_name=cfg["voice"], language_code=cfg["language"], sample_rate_hz=cfg["sample_rate"])
-    return resp.audio
+    # riva's synthesize takes no deadline; its future does — without one a stalled request would hold the page forever
+    fut = tts.synthesize(text, voice_name=cfg["voice"], language_code=cfg["language"], sample_rate_hz=cfg["sample_rate"], future=True)
+    try:
+        return fut.result(timeout=TIMEOUT_S).audio
+    except grpc.FutureTimeoutError:
+        fut.cancel()
+        raise RuntimeError(f"DEADLINE — TTS 응답이 {TIMEOUT_S}초 안에 오지 않았습니다") from None
 
 
 def list_voices() -> dict[str, list[str]]:
