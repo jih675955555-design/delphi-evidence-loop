@@ -31,7 +31,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
-import os
+import math
 import re
 import shutil
 import subprocess
@@ -41,7 +41,7 @@ from array import array
 from pathlib import Path
 
 from . import store
-from .llm import api_key, load_env
+from .llm import api_key, env
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE_DIR = ROOT / "data" / "stt_cache"
@@ -61,19 +61,32 @@ class SttUnavailable(RuntimeError):
     pass
 
 
+def _boost() -> float:
+    """STT_BOOST as a number ≥ 0 (default 0 = off). A value that is not one is refused with the reason, not read as 0:
+    someone who turned boosting on should not silently get it off, and a ValueError must not reach page rendering."""
+    raw = env("STT_BOOST", "0")
+    try:
+        boost = float(raw)
+    except ValueError:
+        boost = math.nan
+    if not 0 <= boost < math.inf:   # NaN fails too
+        raise SttUnavailable(f"STT_BOOST 는 0 이상의 숫자여야 합니다 — 지금 값 {raw[:40]!r}. 기본은 0(단어 가중 없음)입니다. "
+                             ".env(또는 환경 변수)를 고친 뒤 서버를 다시 시작하세요.")
+    return boost
+
+
 def settings(engine: str | None = None) -> dict:
-    load_env()
-    engine = (engine or os.environ.get("STT_ENGINE", "parakeet")).lower()
+    engine = (engine or env("STT_ENGINE", "parakeet")).lower()
     if engine not in ENGINES:
-        raise SttUnavailable(f"STT 엔진은 {', '.join(ENGINES)} 중 하나입니다: {engine!r}")
+        raise SttUnavailable(f"STT 엔진은 {', '.join(ENGINES)} 중 하나입니다: {engine[:40]!r}")
     e = ENGINES[engine]
     return {
         "engine": engine, "model": e["model"],
-        "server": os.environ.get("STT_SERVER", "grpc.nvcf.nvidia.com:443"),
-        "function_id": os.environ.get(f"STT_FUNCTION_ID_{engine.upper()}", e["function_id"]),
-        "language": os.environ.get("STT_LANGUAGE", e["language"]),
+        "server": env("STT_SERVER", "grpc.nvcf.nvidia.com:443"),
+        "function_id": env(f"STT_FUNCTION_ID_{engine.upper()}", e["function_id"]),
+        "language": env("STT_LANGUAGE", e["language"]),
         "mode": e["mode"],
-        "boost": float(os.environ.get("STT_BOOST", "0")) if e["boost"] else 0.0,   # opt-in: boosting invents segment names
+        "boost": _boost() if e["boost"] else 0.0,   # opt-in: boosting invents segment names
     }
 
 

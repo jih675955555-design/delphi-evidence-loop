@@ -2,7 +2,8 @@
 Checks: STT entrance (cache replay, consent, no duplicates, provenance hidden from the model, word boost off by default),
 quote verification drops paraphrases, tally counts only verified claims, thresholds, gate order, action items,
 TTS chunking and caching, the collection stage (listen, save gates, effect, undo), and finally the committed collection
-bake replayed end to end with the real cache and no key."""
+bake replayed end to end with the real cache and no key, and .env as people edit it (a same-line comment is not
+part of the value; a bad STT_BOOST is a reason on the page, never a 500)."""
 import json, os, re, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -346,4 +347,37 @@ assert "HYP-006" in json.dumps(hyps_api), "the console API sees the collected hy
 client.post("/run/collect/reset", follow_redirects=False)
 assert store.FIELD_NOTES.read_bytes() == real_notes.read_bytes() and store.STATE.read_bytes() == (store.DATA / "state.json").read_bytes(), web.LAST["msg"]
 print("web: audio 206 · traversal 404 · NO_KEY/BUSY 409 · save → sense → HYP-006 → /api/hypotheses · undo restores both files byte for byte")
+
+# ── .env as the template is used: a line switched on with its same-line comment left in place, and a bad value ──
+from loop import cli
+env_tmp, ENV_KEYS = tmp / "dotenv", ("STT_ENGINE", "STT_LANGUAGE", "STT_BOOST", "TTS_VOICE", "COLLECT_GITHUB_REF")
+def use_env(text):
+    for k in ENV_KEYS: os.environ.pop(k, None)
+    env_tmp.write_text(text); llm.ENV_FILES = [env_tmp]   # no NVIDIA_API_KEY in it: still offline
+use_env("STT_ENGINE=parakeet        # parakeet (기본) | whisper\nSTT_LANGUAGE=ko-KR         # parakeet 기본 ko-KR\n"
+        "STT_BOOST=2                # 기본 0 = 단어 가중 없음. parakeet 만\n"
+        'export TTS_VOICE="Chatterbox-Multilingual.ko-KR.Male # 따옴표 안은 값"\nCOLLECT_GITHUB_REF=a#b\n')
+cfg = stt.settings()
+assert (cfg["engine"], cfg["language"], cfg["boost"]) == ("parakeet", "ko-KR", 2.0), cfg
+assert tts.settings()["voice"] == "Chatterbox-Multilingual.ko-KR.Male # 따옴표 안은 값" and os.environ["COLLECT_GITHUB_REF"] == "a#b"
+for path in ("/collect", "/collect/FS-01", "/collect/scripts.json"):
+    assert client.get(path).status_code == 200, path
+use_env("STT_BOOST=\n")
+assert stt.settings("parakeet")["boost"] == 0.0, "an empty value is the default"
+for bad in ("abc", "-1", "nan"):
+    use_env(f"STT_BOOST={bad}\n")
+    try: stt.settings("parakeet"); raise AssertionError(f"STT_BOOST={bad} accepted")
+    except stt.SttUnavailable as e: assert "STT_BOOST" in str(e)
+    assert stt.settings("whisper")["boost"] == 0.0, "whisper has no boosting to misconfigure"
+    for path in ("/collect", "/collect/FS-01"):
+        r = client.get(path)
+        assert r.status_code == 200 and "STT 설정을 쓸 수 없다" in r.text and 'data-listen="' not in r.text, (bad, path, r.status_code)
+    rl = client.post("/collect/FS-01/listen?mode=replay")
+    assert rl.status_code == 409 and rl.json()["error"]["code"] == "STT_CONFIG", rl.text
+argv = sys.argv; sys.argv = ["loop", "scripts"]
+try: cli.main(); raise AssertionError("CLI ran with a bad STT_BOOST")
+except SystemExit as e: assert str(e).startswith("[사실] STT_BOOST"), e
+finally: sys.argv = argv
+use_env(""); llm.ENV_FILES = []
+print("dotenv: same-line comments dropped, quotes kept · bad STT_BOOST → reason on /collect (200), 409 STT_CONFIG, CLI message")
 print("SELFTEST OK")

@@ -49,7 +49,7 @@
 ## NVIDIA 스택
 
 - **음성 전사**: `nvidia/parakeet-1.1b-rnnt-multilingual-asr` (기본 · 25개 언어 · ko-KR · 스트리밍) — build.nvidia.com 호스팅 Riva gRPC(`grpc.nvcf.nvidia.com`). 호출은 `loop/stt.py` 한 곳. 같은 음성은 해시로 캐시에서 재생한다. 비교용으로 `--engine whisper`(`openai/whisper-large-v3`, 언어 `ko` · 오프라인 · 60초 단위로 조용한 지점에서 나눠 보냄). build.nvidia.com의 `nemotron-asr-streaming`은 영어 전용이라 쓰지 않는다. function-id는 코드 기본값이 있어 **키만 있으면 된다**.
-  - **단어 가중은 기본으로 끈다** (`STT_BOOST` 기본 0, 켜려면 0보다 큰 값 · parakeet만). 깨끗한 합성 음성에서 실측한 CER이 가중 0 → 4.4%, 2 → 8.8%, 5 → 51%, 10 → 109%였다(가중한 낱말을 되풀이해 적는다). 더 나쁜 것은 가중 2에서도 말한 «당뇨 적응증»을 환자군 이름 «당뇨 전단계»로 적었다는 점이다 — 환자군 이름을 가중하면 현장에 없던 신호를 만들고, 집계가 그것을 센다. `data/contract.json`의 `stt_keyterms`는 남아 있지만 기본으로는 쓰지 않는다.
+  - **단어 가중은 기본으로 끈다** (`STT_BOOST` 기본 0, 켜려면 0보다 큰 값 · parakeet만). 깨끗한 합성 음성에서 실측한 CER이 가중 0 → 4.4%, 2 → 8.8%, 5 → 51%, 10 → 109%였다(가중한 낱말을 되풀이해 적는다). 더 나쁜 것은 가중 2에서도 말한 «당뇨 적응증»을 환자군 이름 «당뇨 전단계»로 적었다는 점이다 — 환자군 이름을 가중하면 현장에 없던 신호를 만들고, 집계가 그것을 센다. `data/contract.json`의 `stt_keyterms`는 남아 있지만 기본으로는 쓰지 않는다. `STT_BOOST`가 0 이상의 숫자가 아니면 조용히 0으로 읽지 않는다 — CLI는 이유를 알리고 멈추며, 현장 수집 화면은 이유를 보여 주고 듣기 버튼을 뺀다.
 - **합성 음성 (현장 수집 데모)**: `resembleai/chatterbox-multilingual-tts` — 같은 gRPC 호스트, function-id 기본값 `ddacc747-1269-4fab-bfd9-8f593dead106`(`TTS_FUNCTION_ID`로 덮어씀), 한국어 음성은 하나(`Chatterbox-Multilingual.ko-KR.Male`), 24 kHz. 호출은 `loop/tts.py` 한 곳. 함수가 알리는 입력 한도는 500자지만 실제로 막히는 것은 요청 한 번에 약 20초(음성 토큰 500개)라서, 글을 문장 경계에서 110자 이하 조각으로 나눠 합성하고 짧은 무음으로 잇는다. 같은 글도 매번 다른 음성이 나오므로(비결정적) 글의 해시로 캐시한다.
 - **추론**: `nvidia/nemotron-3-ultra-550b-a55b` — NIM OpenAI 호환 API, 한국어 공식 지원. 호출은 `loop/llm.py` 한 곳. 구조화 출력(JSON schema)만 받고, 같은 입력은 캐시에서 재생한다.
 - **스킬**: `skills/evidence-loop/SKILL.md` — Agent Skills 규격. Claude Code·OpenClaw 등 호환 에이전트에 설치하면 이 루프를 도구로 쓴다.
@@ -76,6 +76,7 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8030/api npm run dev -- --port 3010   
 ```bash
 uv sync
 cp .env.example .env            # build.nvidia.com 에서 발급한 nvapi- 키 (무료)
+                                # 선택 설정은 맨 앞 «# » 만 지워 켠다. 같은 줄 뒤의 « # …» 는 dotenv 처럼 주석으로 버린다
 
 # 웹 콘솔 — 리포트 위에 실행 버튼. 단계 순서·관문은 코드가 지킨다
 uv run uvicorn loop.web:app --port 8030      # http://localhost:8030

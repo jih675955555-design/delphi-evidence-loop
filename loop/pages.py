@@ -553,7 +553,10 @@ LISTEN_LABEL = {"replay": "저장된 전사를 음성 시각에 맞춰 보여준
 
 def _listen_labels() -> dict:
     from . import stt
-    boost = stt.settings("parakeet")["boost"]
+    try:
+        boost = stt.settings("parakeet")["boost"]
+    except stt.SttUnavailable:   # the page shows the settings error and no live button
+        boost = 0.0
     return {**LISTEN_LABEL, "live": "STT가 듣는 중 — 실시간 전사 (Parakeet 1.1B 다국어 · 스트리밍 · "
                                      + ("단어 가중 없음)" if not boost else f"단어 가중 {boost:g})")}
 
@@ -565,6 +568,7 @@ def collect_rows(state: dict, contract: dict) -> list[dict]:
     done = collect.collected(load_notes())
     by = {(r["segment"], r["signal_type"]): r for r in tally(state)}
     thr = contract["threshold"]
+    stt_err = collect.stt_problem()   # a bad STT setting hides saved transcripts (their cache key needs it), never a 500
     rows = []
     for s in collect.list_scripts(contract):
         sid = s["script_id"]
@@ -581,7 +585,7 @@ def collect_rows(state: dict, contract: dict) -> list[dict]:
                "current": {"mentions": cur["mentions"], "hcps": cur["hcps"],
                            "passed": cur["mentions"] >= thr["min_mentions"] and cur["hcps"] >= thr["min_hcps"]},
                "audio": {"duration_s": a["duration_s"], "audio_sha256": a["audio_sha256"], "source": a["source"]} if a else None,
-               "transcript_ready": heard or bool(a and collect.saved_transcript(s)),
+               "transcript_ready": heard or bool(a and not stt_err and collect.saved_transcript(s)),
                "collected_doc_id": done[sid]["doc_id"] if sid in done else None, "github_url": collect.blob_url(sid)}
         if s.get("_warn"):
             row["_warn"] = s["_warn"]
@@ -600,6 +604,13 @@ def _source_line() -> str:
     else:
         where = f'{esc(src["path"])}'
     return f'<div class="faint" style="margin:6px 0 10px">{tag("fact")}출처 {where} · 저장소 사본{sha}</div>'
+
+
+def _stt_problem_card(err: str | None) -> str:
+    if not err:
+        return ""
+    return (f'<div class="card gate">{tag("fact")}<b>STT 설정을 쓸 수 없다</b> — {esc(err)}'
+            '<div class="faint" style="margin-top:4px">고칠 때까지 저장된 전사 재생과 실시간 듣기를 멈춘다. 대본과 음성은 그대로 보인다.</div></div>')
 
 
 def _state_cell(r: dict) -> str:
@@ -666,7 +677,7 @@ def collect_page(state: dict, contract: dict, banner: str = "") -> str:
             f'<p class="sub">{tag("fact")}의학부 담당자가 면담을 녹음해 오는 자리를 데모로 옮겼다. 저장소에 있는 <b>합성 면담 대본</b>을 '
             'Chatterbox(TTS)가 읽고, 평가자가 그 음성을 듣는 동안 Parakeet(STT)가 <b>같은 음성 파일</b>을 실제 속도로 들으며 받아 적는다. '
             '받아 적은 글이 녹음 동의 확인을 거쳐 면담 기록 한 건이 되면, 그다음은 이미 있는 흐름(① 추출 → 가설 → 근거 → 서명 → 심의 → 결정)이 그대로 이어진다.</p>',
-            _source_line()]
+            _source_line(), _stt_problem_card(collect.stt_problem())]
     trs = []
     for r in rows:
         sid = esc(r["script_id"])
@@ -775,7 +786,8 @@ def collect_script_page(state: dict, contract: dict, sid: str, banner: str = "")
     live = live if (live and a and live.get("audio_sha256") == a["audio_sha256"]) else None
     running = bool(live and live["status"] == "RUNNING")
     heard = live if (live and live["status"] == "DONE" and live.get("rec")) else None
-    saved = collect.saved_transcript(s) if a else None
+    stt_err = collect.stt_problem()
+    saved = collect.saved_transcript(s) if a and not stt_err else None
     key = collect.can_call_models()
     labels = _listen_labels()
     it = s["intent"]
@@ -791,7 +803,7 @@ def collect_script_page(state: dict, contract: dict, sid: str, banner: str = "")
         ("① 대본 · GitHub", f'{sid} · {s["chars"]}자', "저장소 data/field_scripts", "done"),
         ("② 음성 · TTS", f'{a["duration_s"]:.1f}초 · {a["tts"]["chunks"]}조각' if a else "없음", "Chatterbox Multilingual", "done" if a else ("next" if key else "later")),
         ("③ 듣기 · 받아 적기 · STT", f"CER {round(heard_cer * 100, 1):.1f}%" if heard_cer is not None else ("듣는 중" if running else "대기"),
-         "Parakeet · 스트리밍", "done" if (heard or done) else ("next" if a else "later")),
+         "Parakeet · 스트리밍", "done" if (heard or done) else ("next" if a and not stt_err else "later")),
         ("④ 면담 기록 · 동의", done["doc_id"] if done else ("동의 확인" if heard else "대기"), (done["stt"]["consent_by"] if done else ("사람 차례" if heard else "")),
          "done" if done else ("human" if heard else "later")),
         ("⑤ 추출 → 가설", (", ".join(derived) if derived else "발언 카드 반영") if extracted else "대기", "① 추출 (기존 단계)" if done else "",
@@ -820,7 +832,7 @@ def collect_script_page(state: dict, contract: dict, sid: str, banner: str = "")
 
     # listen controls
     btns = []
-    if a and key:
+    if a and key and not stt_err:
         btns.append('<button class="btn" type="button" data-listen="live">▶ 재생하며 받아 적기</button>')
     if a and saved:
         btns.append(f'<button class="btn{" ghost" if key else ""}" type="button" data-listen="replay">▶ 재생하며 받아 적기 (저장된 전사)</button>')
@@ -830,6 +842,8 @@ def collect_script_page(state: dict, contract: dict, sid: str, banner: str = "")
         status = f'받아 적기 끝 — {esc(labels.get(heard["mode"], ""))}'
     elif live and live["status"] == "ERROR":
         status = f'이전 듣기가 중단됐다 — {esc(live.get("error") or "")}'
+    elif stt_err:
+        status = "STT 설정을 고칠 때까지 들을 수 없다 — 위의 안내를 본다."
     elif btns:
         status = "재생을 누르면 음성이 나오고, 같은 순간부터 STT가 같은 파일을 실제 속도로 들으며 받아 적는다. 플레이어를 멈춰도 STT는 멈추지 않는다."
     elif a:
@@ -848,7 +862,7 @@ def collect_script_page(state: dict, contract: dict, sid: str, banner: str = "")
     tts_notes = f'<div class="faint" style="margin-top:8px">{esc(s["tts_notes_ko"])}</div>' if s.get("tts_notes_ko") else ""
     texts = ('<div class="grid" style="grid-template-columns:1fr 1fr">'
              f'<div class="card"><b>대본 — TTS가 읽는 글</b> <span class="faint">{s["chars"]}자</span><div class="script-text" style="margin-top:6px">{esc(s["text"])}</div>{tts_notes}</div>'
-             f'<div class="card"><b>STT가 받아 적는 글</b> <span class="faint">{esc(stt.settings("parakeet")["model"])}</span>'
+             f'<div class="card"><b>STT가 받아 적는 글</b> <span class="faint">{esc(stt.ENGINES["parakeet"]["model"])}</span>'
              f'<div class="heard" id="heard" style="margin-top:6px">{heard_html}</div></div></div>')
 
     result = ""
@@ -878,5 +892,5 @@ def collect_script_page(state: dict, contract: dict, sid: str, banner: str = "")
               f'<div style="margin-top:6px">{esc(it["segment"])} × {signal(it["signal_type"])} · {tag("pattern")}지금 집계 {cur["mentions"]}회/{cur["hcps"]}인 '
               f'<span class="faint">(문턱 {thr["min_mentions"]}회·{thr["min_hcps"]}인, 코드)</span></div><div class="sub" style="margin-top:4px">{esc(it["why_ko"])}</div></div>')
     js = COLLECT_JS % {"sid": json.dumps(sid), "labels": json.dumps(labels, ensure_ascii=False), "running": json.dumps(running)}
-    body = head + strip + audio_card + listen_bar + texts + result + gate + intent
+    body = head + strip + _stt_problem_card(stt_err) + audio_card + listen_bar + texts + result + gate + intent
     return shell(f"{sid} 현장 수집", body, "/collect", banner, band=band(state), script=js)

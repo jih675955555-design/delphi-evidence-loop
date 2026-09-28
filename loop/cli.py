@@ -8,6 +8,7 @@ import argparse
 import json
 
 from . import board, collect, screen, sense, store, stt, tts
+from .llm import LlmUnavailable
 
 STANCE_KO = {"SUPPORTS": "지지", "CONTRADICTS": "반대", "NEUTRAL": "중립"}
 
@@ -190,7 +191,10 @@ def main():
     s = sub.add_parser("approve", help="관문 ② 결정 → 현장 체크리스트"); s.add_argument("hyp"); s.add_argument("--by", required=True); s.add_argument("--note"); s.set_defaults(fn=cmd_approve)
     sub.add_parser("status", help="현황").set_defaults(fn=cmd_status)
     args = p.parse_args()
-    args.fn(args)
+    try:
+        args.fn(args)
+    except (LlmUnavailable, stt.SttUnavailable, tts.TtsUnavailable) as e:   # a missing key or a bad setting: the reason, not a traceback
+        raise SystemExit(f"[사실] {e}") from None
 
 
 if __name__ == "__main__":

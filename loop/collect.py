@@ -173,6 +173,16 @@ def can_call_models() -> bool:
     return bool(os.environ.get("NVIDIA_API_KEY", "").strip())
 
 
+def stt_problem(engine: str = "parakeet") -> str | None:
+    """Why the STT settings cannot be used (a bad STT_BOOST in .env, say), or None. The pages show the reason and
+    leave the listen buttons out instead of failing — every transcript lookup needs the settings for its cache key."""
+    try:
+        stt.settings(engine)
+    except stt.SttUnavailable as e:
+        return str(e)
+    return None
+
+
 # ── audio ─────────────────────────────────────────────────────────────────────
 
 def audio(script: dict) -> dict | None:
@@ -356,6 +366,9 @@ def listen(sid: str, *, mode: str = "live", engine: str = "parakeet", pace: floa
     script = get(sid)
     if mode not in ("live", "replay"):
         raise ListenRefused("BAD_MODE", f"듣기 방식은 live 또는 replay 입니다: {mode!r}")
+    problem = stt_problem(engine)
+    if problem:
+        raise ListenRefused("STT_CONFIG", problem)
     with _LOCK:
         other = busy()
         if other:

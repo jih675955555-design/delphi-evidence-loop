@@ -38,7 +38,6 @@ from __future__ import annotations
 import hashlib
 import io
 import json
-import os
 import re
 import time
 import wave
@@ -46,7 +45,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import store
-from .llm import api_key, load_env
+from .llm import api_key, env
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE_DIR = ROOT / "data" / "tts_cache"
@@ -63,13 +62,12 @@ class TtsUnavailable(RuntimeError):
 
 
 def settings() -> dict:
-    load_env()
     return {
         "model": ENGINE["model"],
-        "server": os.environ.get("TTS_SERVER", "grpc.nvcf.nvidia.com:443"),
-        "function_id": os.environ.get("TTS_FUNCTION_ID", ENGINE["function_id"]),
-        "voice": os.environ.get("TTS_VOICE", ENGINE["voice"]),
-        "language": os.environ.get("TTS_LANGUAGE", ENGINE["language"]),
+        "server": env("TTS_SERVER", "grpc.nvcf.nvidia.com:443"),
+        "function_id": env("TTS_FUNCTION_ID", ENGINE["function_id"]),
+        "voice": env("TTS_VOICE", ENGINE["voice"]),
+        "language": env("TTS_LANGUAGE", ENGINE["language"]),
         "sample_rate": ENGINE["sample_rate"],
     }
 
